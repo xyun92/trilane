@@ -1,0 +1,340 @@
+/* ── Findings Panel ─────────────────────────────────────────────────────── */
+
+.findings-panel {
+  padding: 20px;
+  overflow-y: auto;
+  height: 100%;
+  background: var(--bg-primary);
+}
+
+.findings-total {
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1;
+}
+
+.findings-total span {
+  color: var(--accent);
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.findings-summary {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.findings-actions {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.findings-actions button {
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  background: var(--bg-card);
+  color: var(--accent);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 8px 12px;
+}
+
+.findings-actions span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.severity-badge {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  padding: 10px 12px;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.severity-badge.active {
+  background: var(--bg-hover);
+}
+
+.severity-badge.all {
+  border-color: var(--border-light);
+}
+
+.severity-badge strong {
+  color: var(--text-primary);
+  font-size: 16px;
+}
+
+.severity-label {
+  margin-right: auto;
+}
+
+.severity-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.findings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.finding-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.15s;
+  box-shadow: var(--shadow-hard);
+}
+
+.finding-card:hover {
+  border-color: var(--border-light);
+}
+
+.finding-card.expanded {
+  border-color: var(--accent);
+}
+
+.finding-header {
+  display: grid;
+  grid-template-columns: 54px 90px minmax(0, 1fr) 96px;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+}
+
+.finding-severity {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 0;
+  border-radius: 0;
+  text-transform: uppercase;
+}
+
+.finding-id {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.finding-title {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finding-title strong,
+.finding-title em {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finding-title em {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 500;
+  margin-top: 2px;
+}
+
+.finding-status {
+  justify-self: end;
+  font-size: 11px;
+  padding: 3px 7px;
+  border-radius: 4px;
+  border: 1px solid var(--border-light);
+}
+
+.finding-status.confirmed {
+  background: rgba(215, 153, 33, 0.08);
+  color: var(--accent);
+}
+
+.finding-status.verified {
+  background: rgba(215, 153, 33, 0.08);
+  color: var(--accent);
+}
+
+.finding-status.publishable,
+.finding-status.weaponized {
+  background: rgba(215, 153, 33, 0.1);
+  color: var(--accent);
+}
+
+.finding-status.anchored,
+.finding-status.corroborated {
+  background: rgba(124, 200, 255, 0.08);
+  color: var(--cyan);
+}
+
+.finding-status.source-backed {
+  background: rgba(124, 200, 255, 0.08);
+  color: var(--cyan);
+}
+
+.finding-status.needs-poc {
+  background: rgba(255, 180, 84, 0.1);
+  color: var(--medium);
+}
+
+.finding-status.suspected {
+  background: rgba(255, 204, 0, 0.1);
+  color: var(--medium);
+}
+
+.finding-details {
+  padding: 0 12px 12px;
+  border-top: 1px solid var(--border);
+}
+
+.finding-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1px;
+  padding: 12px 0 10px;
+  font-size: 12px;
+  background: var(--border);
+}
+
+.finding-meta div {
+  min-width: 0;
+  padding: 9px;
+  background: var(--bg-secondary);
+}
+
+.finding-meta strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.finding-meta code {
+  display: block;
+  overflow: hidden;
+  color: var(--cyan);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.finding-desc {
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.finding-location {
+  margin: 10px 0;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  padding: 9px;
+}
+
+.finding-location strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.finding-location code {
+  color: var(--cyan);
+  font-size: 12px;
+}
+
+.finding-desc strong {
+  color: var(--text-muted);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.finding-poc {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 12px;
+}
+
+.finding-poc strong,
+.finding-poc summary {
+  color: var(--text-muted);
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.finding-poc summary {
+  cursor: pointer;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.finding-poc pre {
+  overflow-x: auto;
+  font-size: 12px;
+  color: var(--accent);
+}
+
+.queue-empty {
+  display: flex;
+  min-height: 360px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--border-light);
+  border-radius: 4px;
+  color: var(--text-muted);
+}
+
+.queue-empty span {
+  margin-bottom: 8px;
+  color: var(--accent);
+  font-size: 11px;
+}
+
+/* ── Scrollbar ──────────────────────────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-light);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}

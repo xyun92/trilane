@@ -1,0 +1,237 @@
+:root {
+  --bg-primary: #1d2021;
+  --bg-secondary: #282828;
+  --bg-card: #32302f;
+  --bg-hover: #3c3836;
+  --text-primary: #fbf1c7;
+  --text-secondary: #d5c4a1;
+  --text-muted: #928374;
+  --accent: #d79921;
+  --accent-dim: #b57614;
+  --accent-bg: rgba(215, 153, 33, 0.12);
+  --cyan: #458588;
+  --critical: #cc241d;
+  --high: #fe8019;
+  --medium: #fabd2f;
+  --low: #98971a;
+  --purple: #b16286;
+  --border: #504945;
+  --border-light: #665c54;
+  --shadow-hard: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  overflow: hidden;
+  height: 100vh;
+  font-size: 13px;
+}
+
+#root {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  height: 48px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;
+  position: relative;
+  box-shadow: var(--shadow-hard);
+}
+
+/* Window controls (close/minimize/maximize) */
+.window-controls {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  -webkit-app-region: no-drag;
+  margin-right: 14px;
+}
+
+.window-btn {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  -webkit-app-region: no-drag;
+}
+
+.window-btn:hover {
+  opacity: 0.8;
+}
+
+.window-btn-close { background: var(--critical); }
+.window-btn-minimize { background: var(--medium); }
+.window-btn-maximize { background: var(--accent); }
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 310px;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0;
+}
+
+.logo-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 22px;
+  background: var(--accent);
+  color: #081006;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.version {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 0 8px;
+  border-left: 1px solid var(--border-light);
+}
+
+.runtime-pill {
+  font-size: 11px;
+  padding: 3px 7px;
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  color: var(--text-secondary);
+}
+
+.runtime-pill.ok {
+  color: var(--accent);
+  border-color: rgba(215, 153, 33, 0.28);
+  background: var(--accent-bg);
+}
+
+.runtime-pill.warn {
+  color: var(--medium);
+  border-color: rgba(231, 211, 106, 0.28);
+  background: rgba(231, 211, 106, 0.08);
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  -webkit-app-region: no-drag;
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  padding: 7px 10px;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: inherit;
+  border-radius: 4px;
+  transition: all 0.15s;
+  -webkit-app-region: no-drag;
+}
+
+.tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.tab.active {
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-color: rgba(215, 153, 33, 0.24);
+}
+
+.tab-code {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.tab.active .tab-code {
+  color: var(--accent-dim);
+}
+
+.tab-count {
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(255, 180, 84, 0.12);
+  color: var(--high);
+  font-size: 10px;
+  text-align: center;
+}
+
+/* ── Stage Progress (Global) ────────────────────────────────────────────── */
+
+.stage-progress-global {
+  padding: 8px 20px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+}
+
+.stage-progress-bar-global {
+  height: 3px;
+  background: var(--bg-card);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.stage-progress-fill-global {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), #458588);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.stage-progress-info {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ── Main Content ───────────────────────────────────────────────────────── */
+
+.main {
+  flex: 1;
+  overflow: hidden;
+}
+

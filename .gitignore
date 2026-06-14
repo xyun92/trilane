@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+
+# Rust build output
+target/
+codex-rs/target/
+
+# Frontend build output
+dist/
+codex-rs/trilane-gui/frontend/dist/
+
+# Local npm release artifacts
+*.tgz
+npm/vendor/
+
+# Logs and caches
+*.log
+.cache/
+.turbo/
+*.tsbuildinfo
+__pycache__/
+*.pyc
+
+# Local env files
+.env*
+!.env.example
+.venv/
+
+# Editors and OS files
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+Icon?

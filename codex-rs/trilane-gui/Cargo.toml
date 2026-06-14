@@ -1,0 +1,46 @@
+[package]
+name = "trilane-gui"
+version = "0.1.0"
+edition = "2021"
+description = "TriLane - lane-orchestrated vulnerability hunting with GUI"
+license = "Apache-2.0"
+
+[dependencies]
+# Tauri
+tauri = { version = "2", features = ["devtools"] }
+tauri-plugin-shell = "2"
+
+# codex-rs (workspace dependencies)
+codex-app-server-client = { workspace = true }
+codex-app-server-protocol = { workspace = true }
+codex-core = { workspace = true }
+codex-config = { workspace = true }
+codex-protocol = { workspace = true }
+codex-feedback = { workspace = true }
+codex-arg0 = { workspace = true }
+codex-exec-server = { workspace = true }
+
+# Common
+axum = { workspace = true, features = ["http1", "json", "tokio"] }
+async-stream = { workspace = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { workspace = true, features = ["json"] }
+sqlx = { workspace = true }
+tokio = { version = "1", features = ["full"] }
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+chrono = "0.4"
+toml = "0.9"
+dirs = "6"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

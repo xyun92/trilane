@@ -1,0 +1,37 @@
+{
+  "name": "trilane",
+  "version": "0.1.0",
+  "description": "TriLane desktop launcher for lane-orchestrated vulnerability hunting",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/xyun92/trilane#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xyun92/trilane.git"
+  },
+  "bugs": {
+    "url": "https://github.com/xyun92/trilane/issues"
+  },
+  "bin": {
+    "trilane": "bin/trilane.js"
+  },
+  "files": [
+    "bin",
+    "vendor",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "app": "node bin/trilane.js app",
+    "doctor": "node bin/trilane.js doctor"
+  },
+  "keywords": [
+    "security",
+    "pentest",
+    "vulnerability",
+    "agent",
+    "gui"
+  ]
+}

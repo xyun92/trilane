@@ -1,0 +1,83 @@
+@media (max-width: 980px) {
+  .header {
+    gap: 8px;
+  }
+
+  .header-left {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .version,
+  .runtime-pill {
+    display: none;
+  }
+
+  .tabs {
+    flex: 0 1 auto;
+    max-width: 58vw;
+    overflow-x: auto;
+  }
+
+  .tab {
+    flex: 0 0 auto;
+  }
+
+  .asm-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .scan-asm-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .asm-flow-shell {
+    min-height: 520px;
+    border-right: 0;
+    border-bottom: 2px solid var(--border-light);
+  }
+
+  .asm-inspector {
+    min-height: 260px;
+  }
+
+  .asm-cockpit-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .asm-legend {
+    justify-content: flex-start;
+  }
+
+  .terminal-body {
+    grid-template-columns: 1fr;
+  }
+
+  .ops-rail {
+    display: none;
+  }
+
+  .stage-pipeline,
+  .sop-stages,
+  .findings-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .runbook-brief,
+  .ledger-stats,
+  .coverage-heatmap,
+  .runbook-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ascii-pipeline {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+  }
+
+  .settings-route,
+  .scan-config {
+    grid-template-columns: 1fr;
+  }
+}
