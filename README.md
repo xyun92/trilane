@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./trilane-rs/trilane-gui/icons/128x128.png" alt="TriLane" width="96" height="96">
+</p>
+
 <h1 align="center">TriLane</h1>
 
 <p align="center">
