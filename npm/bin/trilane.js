@@ -37,8 +37,8 @@ async function main() {
     process.exit(2);
   }
 
-  const binary = await resolveBinary({ allowDownload: true });
-  runBinary(binary, process.argv.slice(3));
+  const target = await resolveLaunchTarget({ allowDownload: true });
+  runLaunchTarget(target, process.argv.slice(3));
 }
 
 function printHelp() {
@@ -60,20 +60,25 @@ function runDoctor() {
   console.log(`TriLane package: ${packageJson.version}`);
   console.log(`Platform: ${os.platform()}/${os.arch()}`);
 
-  const binary = resolveLocalBinary();
-  if (!binary) {
-    console.error("Binary: missing");
-    console.error("Set TRILANE_BIN to a locally built trilane-gui binary, or use a package with a bundled binary for this platform.");
+  const target = resolveLocalLaunchTarget();
+  if (!target) {
+    console.error("Launcher: missing");
+    console.error("Set TRILANE_BIN to a locally built trilane-gui binary, or use a package with a bundled launcher for this platform.");
     process.exit(1);
   }
 
-  console.log(`Binary: ${binary}`);
+  if (target.kind === "app") {
+    console.log(`App bundle: ${target.path}`);
+    console.log(`Executable: ${target.executable}`);
+  } else {
+    console.log(`Binary: ${target.path}`);
+  }
 }
 
-async function resolveBinary({ allowDownload }) {
-  const localBinary = resolveLocalBinary();
-  if (localBinary) {
-    return localBinary;
+async function resolveLaunchTarget({ allowDownload }) {
+  const localTarget = resolveLocalLaunchTarget();
+  if (localTarget) {
+    return localTarget;
   }
 
   if (!allowDownload) {
@@ -85,26 +90,45 @@ async function resolveBinary({ allowDownload }) {
     || `https://github.com/xyun92/trilane/releases/download/v${version}`;
   const asset = platformAssetName();
   const cacheDir = path.join(os.homedir(), ".trilane", "bin", version);
-  const cachedBinary = path.join(cacheDir, asset.binaryName);
+  const cachedTarget = path.join(cacheDir, asset.targetName);
 
-  if (!fs.existsSync(cachedBinary)) {
+  if (!fs.existsSync(cachedTarget)) {
     fs.mkdirSync(cacheDir, { recursive: true });
     const archivePath = path.join(cacheDir, asset.archiveName);
     await download(`${releaseBase}/${asset.archiveName}`, archivePath);
-    unpackArchive(archivePath, cachedBinary, asset);
+    unpackArchive(archivePath, cacheDir, asset);
   }
 
-  return cachedBinary;
+  if (asset.kind === "app") {
+    const executable = path.join(cacheDir, asset.executablePath);
+    if (!executablePathOrNull(executable)) {
+      throw new Error(`archive did not contain executable ${asset.executablePath}`);
+    }
+    return appLaunchTarget(cachedTarget, executable);
+  }
+
+  if (!executablePathOrNull(cachedTarget)) {
+    throw new Error(`archive did not contain executable ${asset.executablePath}`);
+  }
+  return binaryLaunchTarget(cachedTarget);
 }
 
-function resolveLocalBinary() {
+function resolveLocalLaunchTarget() {
   const explicitBin = process.env.TRILANE_BIN;
   if (explicitBin) {
-    return executablePathOrNull(explicitBin);
+    const explicitPath = executablePathOrNull(explicitBin);
+    return explicitPath ? binaryLaunchTarget(explicitPath) : null;
+  }
+
+  const bundledApp = bundledAppPath();
+  const bundledAppExecutable = bundledAppExecutablePath(bundledApp);
+  if (isDirectory(bundledApp) && executablePathOrNull(bundledAppExecutable)) {
+    return appLaunchTarget(bundledApp, bundledAppExecutable);
   }
 
   const bundled = bundledBinaryPath();
-  return executablePathOrNull(bundled);
+  const bundledPath = executablePathOrNull(bundled);
+  return bundledPath ? binaryLaunchTarget(bundledPath) : null;
 }
 
 function executablePathOrNull(candidate) {
@@ -127,31 +151,65 @@ function bundledBinaryPath() {
   return path.join(__dirname, "..", "vendor", `${platform}-${arch}`, binaryName);
 }
 
+function bundledAppPath() {
+  if (os.platform() !== "darwin") {
+    return null;
+  }
+  return path.join(__dirname, "..", "vendor", `darwin-${os.arch()}`, "TriLane.app");
+}
+
+function bundledAppExecutablePath(appPath) {
+  if (!appPath) {
+    return null;
+  }
+  return path.join(appPath, "Contents", "MacOS", "trilane-gui");
+}
+
+function isDirectory(candidate) {
+  try {
+    return fs.statSync(candidate).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function appLaunchTarget(appPath, executable) {
+  return { kind: "app", path: appPath, executable };
+}
+
+function binaryLaunchTarget(binaryPath) {
+  return { kind: "binary", path: binaryPath };
+}
+
 function platformAssetName() {
   const platform = os.platform();
   const arch = os.arch();
 
   if (platform === "darwin" && arch === "arm64") {
-    return asset("trilane-aarch64-apple-darwin.tar.gz", "trilane");
+    return appAsset("trilane-aarch64-apple-darwin.tar.gz", "TriLane.app", "TriLane.app/Contents/MacOS/trilane-gui");
   }
   if (platform === "darwin" && arch === "x64") {
-    return asset("trilane-x86_64-apple-darwin.tar.gz", "trilane");
+    return appAsset("trilane-x86_64-apple-darwin.tar.gz", "TriLane.app", "TriLane.app/Contents/MacOS/trilane-gui");
   }
   if (platform === "linux" && arch === "x64") {
-    return asset("trilane-x86_64-unknown-linux-musl.tar.gz", "trilane");
+    return binaryAsset("trilane-x86_64-unknown-linux-musl.tar.gz", "trilane");
   }
   if (platform === "linux" && arch === "arm64") {
-    return asset("trilane-aarch64-unknown-linux-musl.tar.gz", "trilane");
+    return binaryAsset("trilane-aarch64-unknown-linux-musl.tar.gz", "trilane");
   }
   if (platform === "win32" && arch === "x64") {
-    return asset("trilane-x86_64-pc-windows-msvc.zip", "trilane.exe");
+    return binaryAsset("trilane-x86_64-pc-windows-msvc.zip", "trilane.exe");
   }
 
   throw new Error(`unsupported platform ${platform}/${arch}`);
 }
 
-function asset(archiveName, binaryName) {
-  return { archiveName, binaryName, executablePath: binaryName };
+function appAsset(archiveName, targetName, executablePath) {
+  return { kind: "app", archiveName, targetName, executablePath };
+}
+
+function binaryAsset(archiveName, executablePath) {
+  return { kind: "binary", archiveName, targetName: executablePath, executablePath };
 }
 
 async function download(url, destination) {
@@ -188,8 +246,7 @@ function downloadWithRedirects(url, destination, redirects) {
   });
 }
 
-function unpackArchive(archivePath, binaryPath, assetSpec) {
-  const outputDir = path.dirname(binaryPath);
+function unpackArchive(archivePath, outputDir, assetSpec) {
   if (assetSpec.archiveName.endsWith(".tar.gz")) {
     run("tar", ["-xzf", archivePath, "-C", outputDir]);
   } else if (assetSpec.archiveName.endsWith(".zip")) {
@@ -206,14 +263,11 @@ function unpackArchive(archivePath, binaryPath, assetSpec) {
     throw new Error(`unsupported archive type ${assetSpec.archiveName}`);
   }
 
-  const unpackedPath = path.join(outputDir, assetSpec.executablePath);
-  if (unpackedPath !== binaryPath && fs.existsSync(unpackedPath)) {
-    fs.renameSync(unpackedPath, binaryPath);
-  }
-  if (!fs.existsSync(binaryPath)) {
+  const executablePath = path.join(outputDir, assetSpec.executablePath);
+  if (!fs.existsSync(executablePath)) {
     throw new Error(`archive did not contain ${assetSpec.executablePath}`);
   }
-  fs.chmodSync(binaryPath, 0o755);
+  fs.chmodSync(executablePath, 0o755);
 }
 
 function run(command, args) {
@@ -223,8 +277,20 @@ function run(command, args) {
   }
 }
 
-function runBinary(binary, args) {
-  const result = spawnSync(binary, args, { stdio: "inherit" });
+function runLaunchTarget(target, args) {
+  if (target.kind === "app") {
+    const openArgs = ["-n", target.path];
+    if (args.length > 0) {
+      openArgs.push("--args", ...args);
+    }
+    const result = spawnSync("open", openArgs, { stdio: "inherit" });
+    if (result.error) {
+      throw result.error;
+    }
+    process.exit(result.status ?? 1);
+  }
+
+  const result = spawnSync(target.path, args, { stdio: "inherit" });
   if (result.error) {
     throw result.error;
   }

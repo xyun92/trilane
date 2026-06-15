@@ -66,7 +66,7 @@ Penetration test juice-shop, source code is in ~/juice-shop, service is running 
 
 ## npm Package Status
 
-The first npm package includes a prebuilt macOS Apple Silicon launcher binary. Other platforms can still run TriLane from source, or set `TRILANE_BIN` to a locally built binary:
+The npm package includes a prebuilt macOS Apple Silicon app bundle so the Dock/Finder icon matches the TriLane brand. Other platforms can still run TriLane from source, or set `TRILANE_BIN` to a locally built binary:
 
 ```bash
 TRILANE_BIN=/path/to/trilane-gui npx trilane app

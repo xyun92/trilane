@@ -1,6 +1,6 @@
 {
   "name": "trilane",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "TriLane desktop launcher for lane-orchestrated vulnerability hunting",
   "license": "Apache-2.0",
   "homepage": "https://github.com/xyun92/trilane#readme",

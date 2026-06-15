@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/xyun92/trilane/v0.1.1/trilane-rs/trilane-gui/icons/128x128.png" alt="TriLane" width="96" height="96">
+  <img src="https://raw.githubusercontent.com/xyun92/trilane/v0.1.2/trilane-rs/trilane-gui/icons/128x128.png" alt="TriLane" width="96" height="96">
 </p>
 
 <h1 align="center">TriLane</h1>
@@ -29,7 +29,7 @@ You can also run it without a global install:
 npx trilane@latest app
 ```
 
-The first npm release includes a macOS Apple Silicon binary. On other platforms, build `trilane-gui` from source and point the launcher at it:
+The npm package includes a macOS Apple Silicon app bundle with the same TriLane icon shown above. On other platforms, build `trilane-gui` from source and point the launcher at it:
 
 ```bash
 TRILANE_BIN=/path/to/trilane-gui npx trilane app
