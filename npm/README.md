@@ -1,6 +1,17 @@
-# TriLane
+<h1 align="center">TriLane</h1>
 
-TriLane is a desktop security agent for authorized gray-box vulnerability hunting.
+<p align="center">
+  <strong>Desktop security agent for authorized gray-box vulnerability hunting.</strong>
+</p>
+
+<p align="center">
+  <img alt="npm version" src="https://img.shields.io/npm/v/trilane?style=for-the-badge&label=npm&color=d9a441">
+  <img alt="Apache-2.0 license" src="https://img.shields.io/badge/license-Apache--2.0-2f6f73?style=for-the-badge">
+  <img alt="macOS arm64" src="https://img.shields.io/badge/prebuilt-macOS%20arm64-111827?style=for-the-badge">
+  <img alt="desktop GUI" src="https://img.shields.io/badge/interface-desktop%20GUI-6b8afd?style=for-the-badge">
+</p>
+
+TriLane turns one natural-language objective into a staged audit cockpit for authorized local labs, internal codebases, training apps, and bounty targets where you have permission to test.
 
 ```bash
 npm install -g trilane

@@ -1,6 +1,23 @@
-# TriLane
+<h1 align="center">TriLane</h1>
 
-TriLane is a lane-orchestrated security agent for authorized gray-box vulnerability hunting. It turns one natural-language objective into a staged audit cockpit: admission, attack-surface graphing, six-lane semantic audit, merge, targeted probing, and adjudicated final findings.
+<p align="center">
+  <strong>Lane-orchestrated security agent for authorized gray-box vulnerability hunting.</strong>
+</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/trilane"><img alt="npm version" src="https://img.shields.io/npm/v/trilane?style=for-the-badge&label=npm&color=d9a441"></a>
+  <a href="./LICENSE"><img alt="Apache-2.0 license" src="https://img.shields.io/badge/license-Apache--2.0-2f6f73?style=for-the-badge"></a>
+  <img alt="macOS arm64" src="https://img.shields.io/badge/prebuilt-macOS%20arm64-111827?style=for-the-badge">
+  <img alt="desktop GUI" src="https://img.shields.io/badge/interface-desktop%20GUI-6b8afd?style=for-the-badge">
+  <img alt="six audit lanes" src="https://img.shields.io/badge/audit-six%20lanes-c45b43?style=for-the-badge">
+  <img alt="safe and lab modes" src="https://img.shields.io/badge/modes-safe%20%7C%20lab-4b5563?style=for-the-badge">
+</p>
+
+<p align="center">
+  <code>S0 admission</code> -> <code>S1 attack surface</code> -> <code>S2 semantic lanes</code> -> <code>S3 merge</code> -> <code>S4 probing</code> -> <code>S5 findings</code>
+</p>
+
+TriLane turns one natural-language objective into a staged audit cockpit: admission, attack-surface graphing, six-lane semantic audit, merge, targeted probing, and adjudicated final findings.
 
 ![TriLane screenshot](./assets/trilane-screenshot.png)
 
