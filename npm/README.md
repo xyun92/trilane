@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/xyun92/trilane/v0.1.0/trilane-rs/trilane-gui/icons/128x128.png" alt="TriLane" width="96" height="96">
+  <img src="https://raw.githubusercontent.com/xyun92/trilane/v0.1.1/trilane-rs/trilane-gui/icons/128x128.png" alt="TriLane" width="96" height="96">
 </p>
 
 <h1 align="center">TriLane</h1>
