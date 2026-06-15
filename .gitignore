@@ -11,6 +11,7 @@ trilane-rs/trilane-gui/frontend/dist/
 
 # Local npm release artifacts
 *.tgz
+npm/*.tar.gz
 npm/vendor/
 
 # Logs and caches
@@ -33,4 +34,3 @@ __pycache__/
 *~
 .DS_Store
 Thumbs.db
-Icon?

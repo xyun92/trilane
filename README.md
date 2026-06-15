@@ -8,7 +8,7 @@
   <a href="https://www.npmjs.com/package/trilane"><img alt="npm version" src="https://img.shields.io/npm/v/trilane?style=for-the-badge&label=npm&color=d9a441"></a>
   <a href="./LICENSE"><img alt="Apache-2.0 license" src="https://img.shields.io/badge/license-Apache--2.0-2f6f73?style=for-the-badge"></a>
   <img alt="macOS arm64" src="https://img.shields.io/badge/prebuilt-macOS%20arm64-111827?style=for-the-badge">
-  <img alt="desktop GUI" src="https://img.shields.io/badge/interface-desktop%20GUI-6b8afd?style=for-the-badge">
+  <img alt="desktop GUI" src="https://img.shields.io/badge/interface-desktop%20GUI-98971a?style=for-the-badge">
   <img alt="six audit lanes" src="https://img.shields.io/badge/audit-six%20lanes-c45b43?style=for-the-badge">
   <img alt="safe and lab modes" src="https://img.shields.io/badge/modes-safe%20%7C%20lab-4b5563?style=for-the-badge">
 </p>

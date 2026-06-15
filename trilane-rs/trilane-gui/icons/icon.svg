@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <filter id="drop" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="18" dy="22" stdDeviation="0" flood-color="#000000" flood-opacity="0.42"/>
+    </filter>
+    <pattern id="scan" width="1" height="18" patternUnits="userSpaceOnUse">
+      <rect width="1" height="8" fill="#1d2021" opacity="0.24"/>
+    </pattern>
+  </defs>
+  <rect width="1024" height="1024" fill="none"/>
+  <g filter="url(#drop)">
+    <rect x="82" y="82" width="860" height="860" rx="76" fill="#1d2021"/>
+    <rect x="104" y="104" width="816" height="816" rx="54" fill="#282828"/>
+    <rect x="82" y="82" width="860" height="860" rx="76" fill="none" stroke="#d79921" stroke-width="14"/>
+    <rect x="122" y="122" width="780" height="780" rx="38" fill="none" stroke="#665c54" stroke-width="6"/>
+    <rect x="122" y="122" width="780" height="780" rx="38" fill="url(#scan)" opacity="0.62"/>
+
+    <rect x="150" y="146" width="30" height="30" rx="3" fill="#cc241d"/>
+    <rect x="208" y="146" width="30" height="30" rx="3" fill="#d79921"/>
+    <rect x="266" y="146" width="30" height="30" rx="3" fill="#98971a"/>
+    <rect x="150" y="218" width="724" height="24" fill="#3c3836"/>
+    <rect x="150" y="272" width="520" height="24" fill="#3c3836"/>
+    <rect x="694" y="272" width="180" height="24" fill="#504945"/>
+
+    <path d="M232 726H346L522 358H408Z" fill="#d79921"/>
+    <path d="M442 726H556L626 358H512Z" fill="#98971a"/>
+    <path d="M652 726H766L718 358H604Z" fill="#cc241d"/>
+
+    <path d="M232 726H346L522 358H408Z" fill="none" stroke="#fabd2f" stroke-width="10"/>
+    <path d="M442 726H556L626 358H512Z" fill="none" stroke="#b8bb26" stroke-width="10"/>
+    <path d="M652 726H766L718 358H604Z" fill="none" stroke="#fb4934" stroke-width="10"/>
+
+    <rect x="256" y="736" width="76" height="36" rx="3" fill="#fabd2f"/>
+    <rect x="466" y="736" width="76" height="36" rx="3" fill="#b8bb26"/>
+    <rect x="676" y="736" width="76" height="36" rx="3" fill="#fb4934"/>
+    <rect x="270" y="326" width="54" height="54" rx="4" fill="#fabd2f"/>
+    <rect x="480" y="326" width="54" height="54" rx="4" fill="#b8bb26"/>
+    <rect x="690" y="326" width="54" height="54" rx="4" fill="#fb4934"/>
+
+    <g fill="#504945">
+      <rect x="176" y="828" width="16" height="16"/>
+      <rect x="234" y="828" width="16" height="16"/>
+      <rect x="292" y="828" width="16" height="16"/>
+      <rect x="350" y="828" width="16" height="16"/>
+      <rect x="408" y="828" width="16" height="16"/>
+      <rect x="466" y="828" width="16" height="16"/>
+      <rect x="524" y="828" width="16" height="16"/>
+      <rect x="582" y="828" width="16" height="16"/>
+      <rect x="640" y="828" width="16" height="16"/>
+      <rect x="698" y="828" width="16" height="16"/>
+      <rect x="756" y="828" width="16" height="16"/>
+      <rect x="814" y="828" width="16" height="16"/>
+    </g>
+
+    <text x="150" y="876" fill="#ebdbb2" font-family="Monaco, Consolas, monospace" font-size="88" font-weight="700">TRI</text>
+    <rect x="150" y="906" width="330" height="16" fill="#d79921"/>
+    <rect x="506" y="906" width="206" height="16" fill="#98971a"/>
+    <rect x="738" y="906" width="136" height="16" fill="#cc241d"/>
+  </g>
+</svg>
