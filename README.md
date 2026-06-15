@@ -5,11 +5,12 @@
 <h1 align="center">TriLane</h1>
 
 <p align="center">
-  <strong>Lane-orchestrated security agent for authorized gray-box vulnerability hunting.</strong>
+  <strong>Autonomous gray-box security auditing with visible lanes, attack-surface state, and evidence-backed findings.</strong>
 </p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/trilane"><img alt="npm version" src="https://img.shields.io/npm/v/trilane?style=for-the-badge&label=npm&color=d9a441"></a>
+  <a href="https://github.com/xyun92/trilane/releases/latest"><img alt="latest release" src="https://img.shields.io/github/v/release/xyun92/trilane?style=for-the-badge&label=release&color=98971a"></a>
   <a href="./LICENSE"><img alt="Apache-2.0 license" src="https://img.shields.io/badge/license-Apache--2.0-2f6f73?style=for-the-badge"></a>
   <img alt="macOS arm64" src="https://img.shields.io/badge/prebuilt-macOS%20arm64-111827?style=for-the-badge">
   <img alt="desktop GUI" src="https://img.shields.io/badge/interface-desktop%20GUI-98971a?style=for-the-badge">
@@ -21,13 +22,23 @@
   <code>S0 admission</code> -> <code>S1 attack surface</code> -> <code>S2 semantic lanes</code> -> <code>S3 merge</code> -> <code>S4 probing</code> -> <code>S5 findings</code>
 </p>
 
-TriLane turns one natural-language objective into a staged audit cockpit: admission, attack-surface graphing, six-lane semantic audit, merge, targeted probing, and adjudicated final findings.
+TriLane turns one natural-language objective into a staged audit cockpit for authorized local labs, internal codebases, training apps, and bug-bounty targets where you have permission to test.
 
-![TriLane screenshot](./assets/trilane-screenshot.png)
+![TriLane demo](./assets/trilane-demo.gif)
+
+| Attack-Surface Graph | Six Semantic Lanes | Evidence Ledger |
+| --- | --- | --- |
+| Maps routes, code paths, auth boundaries, and reachable surfaces before deep auditing. | Splits review across identity/auth, injection, ingress/files/SSRF, business logic, config/secrets/crypto, and edge coverage. | Merges duplicate claims into adjudicated findings with severity, evidence, payloads, and code paths. |
 
 ## Quick Start
 
-Install and launch the desktop app:
+Run without a global install:
+
+```bash
+npx trilane@latest app
+```
+
+Or install and launch the desktop app:
 
 ```bash
 npm install -g trilane
@@ -35,19 +46,17 @@ trilane doctor
 trilane app
 ```
 
-Or run it without a global install:
-
-```bash
-npx trilane@latest app
-```
-
-Then choose **Safe** or **Lab** mode and describe the authorized target, for example:
+Then choose **Safe** or **Lab** mode and describe the authorized target:
 
 ```text
 Penetration test juice-shop, source code is in ~/juice-shop, service is running on localhost:3000. If not, use colima or start the service directly
 ```
 
-![TriLane demo](./assets/trilane-demo.gif)
+## Why TriLane?
+
+Free-form AI security agents can drift. TriLane makes the audit state explicit: surfaces are inventoried, lane outputs are merged, risky probes are gated by mode, and final findings are deduplicated before export.
+
+![TriLane screenshot](./assets/trilane-screenshot.png)
 
 ## What TriLane Does
 
