@@ -73,13 +73,13 @@ TRILANE_BIN=/path/to/trilane-gui npx trilane app
 Requirements:
 
 - Node.js 20 or newer
-- Rust toolchain from `codex-rs/rust-toolchain.toml`
+- Rust toolchain from `trilane-rs/rust-toolchain.toml`
 - macOS for the current desktop build path
 
 Build the frontend:
 
 ```bash
-cd codex-rs/trilane-gui/frontend
+cd trilane-rs/trilane-gui/frontend
 npm install
 npm run build
 ```

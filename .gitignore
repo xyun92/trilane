@@ -3,11 +3,11 @@ node_modules/
 
 # Rust build output
 target/
-codex-rs/target/
+trilane-rs/target/
 
 # Frontend build output
 dist/
-codex-rs/trilane-gui/frontend/dist/
+trilane-rs/trilane-gui/frontend/dist/
 
 # Local npm release artifacts
 *.tgz

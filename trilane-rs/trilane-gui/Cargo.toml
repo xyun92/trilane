@@ -10,7 +10,7 @@ license = "Apache-2.0"
 tauri = { version = "2", features = ["devtools"] }
 tauri-plugin-shell = "2"
 
-# codex-rs (workspace dependencies)
+# Workspace runtime dependencies
 codex-app-server-client = { workspace = true }
 codex-app-server-protocol = { workspace = true }
 codex-core = { workspace = true }
