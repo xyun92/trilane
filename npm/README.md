@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/xyun92/trilane/v0.1.2/trilane-rs/trilane-gui/icons/128x128.png" alt="TriLane" width="96" height="96">
+  <img src="https://raw.githubusercontent.com/xyun92/trilane/v0.1.3/trilane-rs/trilane-gui/icons/128x128.png" alt="TriLane" width="96" height="96">
 </p>
 
 <h1 align="center">TriLane</h1>
@@ -16,6 +16,8 @@
 </p>
 
 TriLane turns one natural-language objective into a staged audit cockpit for authorized local labs, internal codebases, training apps, and bounty targets where you have permission to test.
+
+![TriLane demo](https://raw.githubusercontent.com/xyun92/trilane/v0.1.3/assets/trilane-demo.gif)
 
 ```bash
 npm install -g trilane
