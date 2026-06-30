@@ -81,7 +81,7 @@ pub fn s2_lane_ids() -> [&'static str; 6] {
         "ingress_engine",
         "logic_engine",
         "config_engine",
-        "edge_surface_engine",
+        "quick_hits_engine",
     ]
 }
 
@@ -92,7 +92,7 @@ fn s2_lane_title(lane_id: &str) -> &'static str {
         "ingress_engine" => "Ingress Engine",
         "logic_engine" => "Logic Engine",
         "config_engine" => "Config Engine",
-        "edge_surface_engine" => "Edge Surface Engine",
+        "quick_hits_engine" => "Quick Hits Engine",
         _ => "Unknown lane",
     }
 }
@@ -114,8 +114,8 @@ fn s2_lane_task(lane_id: &str) -> &'static str {
         "config_engine" => {
             "Engine categories: secrets_config, observability_leak, crypto. Audit hardcoded secrets, test credentials, API keys, TOTP seeds, exposed keys/config/logs/docs/metrics/debug routes, weak crypto/hash choices, JWT key/algorithm handling, and exploitable disclosure impact."
         }
-        "edge_surface_engine" => {
-            "Fast recall sweep for generic low-friction web mechanisms that often sit between lanes. Prioritize source-backed checks for exposed API docs, debug/error pages, metrics/logs, directory indexes, public key/static files, default fixture credentials, upload size/type/content validation, media/subtitle/browser content sinks, JSONP/callback wrappers, product or price tampering, negative totals/payback, coupon generation, weak dependency versions, and code/snippet metadata. Keep it compact: emit only high-confidence CLAIM%/CANDIDATE% lines with concrete files/routes and avoid duplicating stronger claims already obvious in the main five lanes."
+        "quick_hits_engine" => {
+            "Engine categories: cross-lane low-hanging fruit mapped back into the existing TriLane taxonomy. Run a short rg-first recovery pass for high-yield missed families: raw SQL/query interpolation, eval/vm/template sinks, res.jsonp/callback and DOM/browser sinks, wildcard CORS/header gaps, exposed /metrics/docs/logs/config/static files, JWT alg/key confusion, hardcoded secrets/weak hashes, mass assignment, IDOR in basket/order/payment/review/export, coupon/wallet/payment invariant abuse, reset/security-answer/CAPTCHA/rate-limit gaps, upload/parser/traversal, SSRF, and open redirect substring/allowlist bypasses. Keep it lightweight and ledger-first; do not repeat every trace from the five deep lanes."
         }
         _ => "Audit the assigned domain and emit machine-readable evidence.",
     }
@@ -146,6 +146,7 @@ fn s2_lane_prompt(lane_id: &str, objective: &str, s1_ledger: &str, is_repair: bo
          - The S1 ledger may include a few cross-lane weak-signal OBLIGATION% seeds. Do not discard them solely because the taxonomy looks adjacent; inspect the nearest helper/route/middleware file first, then reject with evidence if they truly do not belong.\n\
          - For every high-value claim include source/root cause, route or file:line, exploit primitive, expected impact, and a negative-control idea.\n\
          - Preserve recall: do not keep only top 5 findings; emit all credible candidates in this lane.\n\
+         - Scheduler SUBAGENT% completion does not count as your lane report; a core lane that ends without a non-empty LANE_REPORT% is incomplete and will be repaired.\n\
          - Finish with exactly one LANE_REPORT% lane={lane_id} status=done claims=<n> candidates=<n> note=<short> line.\n",
         s2_lane_title(lane_id),
         objective.trim(),
@@ -260,7 +261,23 @@ fn s2_lane_categories(lane_id: &str) -> &'static [&'static str] {
         "ingress_engine" => &["file_upload_xxe", "traversal_lfi", "ssrf_redirect"],
         "logic_engine" => &["state_invariant_abuse", "anti_automation_bypass", "rate_limit"],
         "config_engine" => &["secrets_config", "observability_leak", "crypto"],
-        "edge_surface_engine" => &[],
+        "quick_hits_engine" => &[
+            "auth",
+            "authz",
+            "session",
+            "injection",
+            "xss",
+            "cors_headers_tls",
+            "file_upload_xxe",
+            "traversal_lfi",
+            "ssrf_redirect",
+            "state_invariant_abuse",
+            "anti_automation_bypass",
+            "rate_limit",
+            "secrets_config",
+            "observability_leak",
+            "crypto",
+        ],
         _ => &[],
     }
 }
@@ -287,32 +304,34 @@ fn s2_lane_keywords(lane_id: &str) -> &'static [&'static str] {
             "secret", "key", "config", "metrics", "log", "debug", "swagger", "openapi", "crypto",
             "hash", "jwt", "cookie", "support",
         ],
-        "edge_surface_engine" => &[
-            "swagger",
-            "api-docs",
-            "metrics",
-            "logs",
-            "errorhandler",
-            "directory",
-            "serve-index",
-            "upload",
-            "mime",
-            "magic",
-            "subtitle",
-            "video",
+        "quick_hits_engine" => &[
+            "sql",
+            "query",
+            "eval",
             "jsonp",
             "callback",
-            "product",
-            "price",
-            "negative",
-            "payback",
+            "cors",
+            "jwt",
+            "secret",
+            "key",
+            "metrics",
+            "swagger",
+            "api-docs",
+            "logs",
+            "static",
+            "upload",
+            "redirect",
+            "ssrf",
+            "wallet",
             "coupon",
-            "admin123",
-            "default",
-            "package",
-            "dependency",
-            "snippet",
-            "codefix",
+            "payment",
+            "order",
+            "basket",
+            "review",
+            "export",
+            "captcha",
+            "security",
+            "rate",
         ],
         _ => &[],
     }
@@ -325,8 +344,7 @@ fn s2_cross_lane_seed_keywords(lane_id: &str) -> &'static [&'static str] {
             "change-password", "reset-password",
         ],
         "injection_engine" => &[
-            "jsonp", "callback", "subtitle", "video", "render", "header", "browser",
-            "profileimage",
+            "jsonp", "callback", "subtitle", "video", "render", "header", "browser", "profileimage",
         ],
         "ingress_engine" => &[
             "quarantine", "ftp", "manifest", "static", "backup", "layout", "archive", "parser",
@@ -339,28 +357,22 @@ fn s2_cross_lane_seed_keywords(lane_id: &str) -> &'static [&'static str] {
             "swagger", "api-docs", "metrics", "logs", "support", "debug", "captcha", "premium",
             "encryptionkeys", "jwt.pub",
         ],
-        "edge_surface_engine" => &[
+        "quick_hits_engine" => &[
             "swagger",
             "api-docs",
             "metrics",
             "logs",
             "support",
             "debug",
-            "errorhandler",
-            "serve-index",
-            "package.json",
-            "sanitize-html",
-            "express-jwt",
-            "admin123",
-            "upload-size",
-            "upload-type",
-            "subtitle",
-            "jsonp",
-            "product",
-            "tamper",
-            "negative",
-            "payback",
+            "captcha",
+            "premium",
+            "encryptionkeys",
+            "jwt.pub",
+            "checkout",
+            "wallet",
             "coupon",
+            "basket",
+            "order",
         ],
         _ => &[],
     }

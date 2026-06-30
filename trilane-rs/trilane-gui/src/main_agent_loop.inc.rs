@@ -49,6 +49,14 @@ async fn agent_event_loop(
                                     }
                                 }
                             }
+                            WorkflowAction::DeferPhase { .. } => {
+                                let message =
+                                    "Unexpected workflow deferral before first turn".to_string();
+                                append_and_emit_system_message(&app, message.clone()).await;
+                                update_runbook_error(&app, &message).await;
+                                set_turn_in_progress(&app, false).await;
+                                continue;
+                            }
                             WorkflowAction::Complete => audit_mode_user_input(&audit_mode, &text),
                             WorkflowAction::Blocked(message) => {
                                 append_and_emit_system_message(&app, message.clone()).await;
@@ -179,69 +187,152 @@ async fn agent_event_loop(
                                     turn.turn.error.as_ref().map(|error| error.message.clone());
                                 let status = format!("{:?}", turn.turn.status);
 
-                                let lane_completion = if let Some(batch) =
-                                    active_lane_batch.as_mut()
+                                let lane_report_context =
+                                    active_lane_batch.as_ref().and_then(|batch| {
+                                        batch.lane_index_by_thread(&turn.thread_id).map(|index| {
+                                            (
+                                                batch.phase_id.clone(),
+                                                batch.stage_id.clone(),
+                                                batch.lanes[index].lane_id.clone(),
+                                            )
+                                        })
+                                    });
+                                let lane_report_seen = if let Some((
+                                    phase_id,
+                                    stage_id,
+                                    lane_id,
+                                )) = lane_report_context.as_ref()
                                 {
-                                    if let Some(index) = batch.lane_index_by_thread(&turn.thread_id)
-                                    {
-                                        let stage_id = batch.stage_id.clone();
-                                        let lane_id = batch.lanes[index].lane_id.clone();
-                                        let attempt = batch.lanes[index].attempts;
-                                        let retryable_error = turn_error
-                                            .as_deref()
-                                            .is_some_and(is_retryable_lane_error);
-                                        let should_retry = turn_error.as_deref().is_some()
-                                            && retryable_error
-                                            && batch.can_retry(index);
-                                        let (lane_status, lane_detail) = if should_retry {
-                                            if let Some(error) = turn_error.as_deref() {
+                                    !requires_workflow_lane_report(phase_id, lane_id)
+                                        || workflow_lane_report_seen(&app, stage_id, lane_id).await
+                                } else {
+                                    false
+                                };
+
+                                let lane_completion =
+                                    if let Some(batch) = active_lane_batch.as_mut() {
+                                        if let Some(index) =
+                                            batch.lane_index_by_thread(&turn.thread_id)
+                                        {
+                                            let phase_id = batch.phase_id.clone();
+                                            let stage_id = batch.stage_id.clone();
+                                            let lane_id = batch.lanes[index].lane_id.clone();
+                                            let attempt = batch.lanes[index].attempts;
+                                            let retryable_error = turn_error
+                                                .as_deref()
+                                                .is_some_and(is_retryable_lane_error);
+                                            let missing_required_report = turn_error.is_none()
+                                                && requires_workflow_lane_report(
+                                                    &phase_id, &lane_id,
+                                                )
+                                                && !lane_report_seen;
+                                            let should_retry_error = turn_error.as_deref().is_some()
+                                                && retryable_error
+                                                && batch.can_retry(index);
+                                            let should_retry_report =
+                                                missing_required_report && batch.can_retry(index);
+                                            let (lane_status, lane_detail, synthesize_report) = if should_retry_error {
+                                                if let Some(error) = turn_error.as_deref() {
+                                                    let delay = batch.retry_lane(index, error);
+                                                    (
+                                                        "retrying",
+                                                        retry_status_summary(error, attempt, delay),
+                                                        false,
+                                                    )
+                                                } else {
+                                                    (
+                                                        "failed",
+                                                        "missing retryable lane error".to_string(),
+                                                        false,
+                                                    )
+                                                }
+                                            } else if should_retry_report {
+                                                let error =
+                                                    "lane turn completed without required LANE_REPORT%";
+                                                batch.lanes[index].prompt =
+                                                    missing_lane_report_repair_prompt(
+                                                        &batch.lanes[index].prompt,
+                                                        &lane_id,
+                                                    );
                                                 let delay = batch.retry_lane(index, error);
                                                 (
                                                     "retrying",
-                                                    retry_status_summary(error, attempt, delay),
+                                                    format!(
+                                                        "missing required LANE_REPORT%; attempt={attempt}/{WORKFLOW_LANE_MAX_ATTEMPTS} retry_after={}s",
+                                                        delay.as_secs()
+                                                    ),
+                                                    false,
+                                                )
+                                            } else if missing_required_report {
+                                                batch.finish_lane(index, /*failed*/ false);
+                                                (
+                                                    "done",
+                                                    format!(
+                                                        "scheduler synthesized missing LANE_REPORT% after attempt={attempt}/{WORKFLOW_LANE_MAX_ATTEMPTS}"
+                                                    ),
+                                                    true,
                                                 )
                                             } else {
-                                                ("failed", "missing retryable lane error".to_string())
-                                            }
+                                                batch.finish_lane(index, turn_error.is_some());
+                                                (
+                                                    if turn_error.is_some() {
+                                                        "failed"
+                                                    } else {
+                                                        "done"
+                                                    },
+                                                    turn_error
+                                                        .as_deref()
+                                                        .unwrap_or("lane turn completed")
+                                                        .to_string(),
+                                                    false,
+                                                )
+                                            };
+                                            Some((
+                                                stage_id,
+                                                lane_id,
+                                                attempt,
+                                                lane_status.to_string(),
+                                                lane_detail,
+                                                synthesize_report,
+                                            ))
                                         } else {
-                                            batch.finish_lane(index, turn_error.is_some());
-                                            (
-                                                if turn_error.is_some() {
-                                                    "failed"
-                                                } else {
-                                                    "done"
-                                                },
-                                                turn_error
-                                                    .as_deref()
-                                                    .unwrap_or("lane turn completed")
-                                                    .to_string(),
-                                            )
-                                        };
-                                        Some((
-                                            stage_id,
-                                            lane_id,
-                                            lane_status.to_string(),
-                                            lane_detail,
-                                        ))
+                                            None
+                                        }
                                     } else {
                                         None
-                                    }
-                                } else {
-                                    None
-                                };
+                                    };
 
-                                if let Some((stage_id, lane_id, lane_status, lane_detail)) =
+                                if let Some((
+                                    stage_id,
+                                    lane_id,
+                                    lane_attempt,
+                                    lane_status,
+                                    lane_detail,
+                                    synthesize_report,
+                                )) =
                                     lane_completion
                                 {
+                                    if synthesize_report {
+                                        record_synthesized_missing_lane_report(
+                                            &app,
+                                            &stage_id,
+                                            &lane_id,
+                                            &turn.thread_id,
+                                            lane_attempt,
+                                        )
+                                        .await;
+                                    }
                                     record_workflow_lane_status(
                                         &app,
-                                        &stage_id,
-                                        &lane_id,
-                                        &lane_status,
-                                        None,
-                                        None,
-                                        Some(&turn.thread_id),
-                                        &lane_detail,
+                                        WorkflowLaneStatus {
+                                            stage_id: &stage_id,
+                                            lane_id: &lane_id,
+                                            status: &lane_status,
+                                            claim_count: None,
+                                            candidate_count: None,
+                                            thread_id: Some(&turn.thread_id),
+                                            summary: &lane_detail,
+                                        },
                                     )
                                     .await;
                                     append_and_emit_system_message(
@@ -394,6 +485,107 @@ async fn agent_event_loop(
                                         WorkflowAction::Complete => {
                                             active_workflow = None;
                                         }
+                                        WorkflowAction::DeferPhase {
+                                            phase_id,
+                                            stage_id,
+                                            title,
+                                            reason,
+                                            next,
+                                        } => {
+                                            record_workflow_phase_deferred(
+                                                &app, &phase_id, &stage_id, &title, &reason,
+                                            )
+                                            .await;
+                                            match *next {
+                                                WorkflowAction::Submit(prompt) => {
+                                                    start_workflow_phase(&app, &prompt).await;
+                                                    emit_fe(&app, FrontendEvent::TurnCompleted {
+                                                        thread_id: turn.thread_id.clone(),
+                                                        turn_id: turn.turn.id.clone(),
+                                                        status: format!(
+                                                            "PhaseCompleted:{status}"
+                                                        ),
+                                                    });
+                                                    match submit_agent_turn(
+                                                        &mut client,
+                                                        &mut request_counter,
+                                                        &thread_id,
+                                                        prompt.prompt,
+                                                    )
+                                                    .await
+                                                    {
+                                                        Ok(_resp) => {
+                                                            info!(
+                                                                "Workflow phase turn started after deferred phase"
+                                                            );
+                                                        }
+                                                        Err(e) => {
+                                                            let message = format!("Workflow turn start failed: {e}");
+                                                            active_workflow = None;
+                                                            update_runbook_error(&app, &message).await;
+                                                            append_and_emit_system_message(
+                                                                &app,
+                                                                message.clone(),
+                                                            )
+                                                            .await;
+                                                            set_turn_in_progress(&app, false)
+                                                                .await;
+                                                        }
+                                                    }
+                                                }
+                                                WorkflowAction::SpawnLanes(batch) => {
+                                                    match start_workflow_lane_batch(
+                                                        &client,
+                                                        &mut request_counter,
+                                                        &app,
+                                                        &runtime_config,
+                                                        &batch,
+                                                    )
+                                                    .await
+                                                    {
+                                                        Ok(batch_runtime) => {
+                                                            active_lane_batch =
+                                                                Some(batch_runtime);
+                                                        }
+                                                        Err(e) => {
+                                                            let message = format!(
+                                                                "Workflow lane start failed: {e}"
+                                                            );
+                                                            active_workflow = None;
+                                                            update_runbook_error(&app, &message)
+                                                                .await;
+                                                            append_and_emit_system_message(
+                                                                &app,
+                                                                message.clone(),
+                                                            )
+                                                            .await;
+                                                            set_turn_in_progress(&app, false)
+                                                                .await;
+                                                        }
+                                                    }
+                                                }
+                                                WorkflowAction::Complete => {
+                                                    active_workflow = None;
+                                                }
+                                                WorkflowAction::Blocked(message) => {
+                                                    active_workflow = None;
+                                                    update_runbook_error(&app, &message).await;
+                                                    append_and_emit_system_message(&app, message)
+                                                        .await;
+                                                }
+                                                WorkflowAction::DeferPhase { .. } => {
+                                                    let message =
+                                                        "Nested workflow deferral is not supported"
+                                                            .to_string();
+                                                    active_workflow = None;
+                                                    update_runbook_error(&app, &message).await;
+                                                    append_and_emit_system_message(&app, message)
+                                                        .await;
+                                                    set_turn_in_progress(&app, false).await;
+                                                }
+                                            }
+                                            continue;
+                                        }
                                         WorkflowAction::Blocked(message) => {
                                             active_workflow = None;
                                             update_runbook_error(&app, &message).await;
@@ -424,17 +616,19 @@ async fn agent_event_loop(
                                                 turn.turn.id.clone(),
                                             )
                                             .map(|lane_id| (stage_id, lane_id))
-                                    });
+                                });
                                 if let Some((stage_id, lane_id)) = lane_started {
                                     record_workflow_lane_status(
                                         &app,
-                                        &stage_id,
-                                        &lane_id,
-                                        "running",
-                                        None,
-                                        None,
-                                        Some(&turn.thread_id),
-                                        "lane turn started",
+                                        WorkflowLaneStatus {
+                                            stage_id: &stage_id,
+                                            lane_id: &lane_id,
+                                            status: "running",
+                                            claim_count: None,
+                                            candidate_count: None,
+                                            thread_id: Some(&turn.thread_id),
+                                            summary: "lane turn started",
+                                        },
                                     )
                                     .await;
                                     emit_fe(&app, FrontendEvent::TurnStarted {

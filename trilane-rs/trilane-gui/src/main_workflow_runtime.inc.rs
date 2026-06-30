@@ -12,7 +12,7 @@ fn audit_mode_user_input(audit_mode: &AuditMode, text: &str) -> String {
     let control = format!(
         "AUDIT_MODE% {}\n\
          {access}\n\
-         MODE_RULES% Run the TriLane surface-driven audit with backend workflow control. S1 is led by the root model, but S1 is a fast indexer rather than a deep audit: use route registration, rg, file lists, and representative high-risk helpers to emit real FEATURE%/SURFACE%/OBLIGATION%/COVERAGE% ledgers quickly. Do not deep-read every handler in S1 and do not spend S1 proving vulnerabilities. Carry unresolved source-sink depth and fine-grained hypothesis expansion into S2. Never end the turn after saying \"now emitting the ledger\" or \"I have enough information\"; emit the actual ledger lines immediately in the same assistant message. In S2, do not spawn subagents yourself: the TriLane backend workflow scheduler will launch the five core child engines for identity_engine, injection_engine, ingress_engine, logic_engine, and config_engine, plus a lightweight edge_surface_engine for generic low-friction recall gaps, with bounded concurrency and retry/backoff, then join their structured ledgers. S3 receives a RUNBOOK_CONTEXT% merge packet built from those lane documents. Every feature/surface/obligation must receive CLAIM%/CANDIDATE% coverage or an evidence-backed not-applicable COVERAGE% note. S1/S2 breadth is scale-aware: emit BREADTH% and generate multiple independent hypotheses per active domain when route/auth/parser/object/sink complexity supports it. Use generic CVE-prior families as a checklist, not as target-specific answers. Probe/dispose every candidate, merge duplicate claim families, and report unresolved coverage or hypothesis debt instead of inventing findings. S3 is mandatory before S4: emit RUNBOOK% S3 Summary with merge/FoA/debt ledger before any RUNBOOK% S4 Fuzz. S2/S3 findings are provisional: do not call the audit complete or publish the final report until RUNBOOK% S4 Fuzz records targeted variant probing or evidence-backed skips, then RUNBOOK% S5 Verify emits ADJUDICATE% decisions and canonical final FINDING% entries.",
+         MODE_RULES% Run the TriLane source-aware audit with backend workflow control. S1 is led by the root model, but S1 is a fast indexer rather than a deep audit: use route registration, rg, file lists, and representative high-risk helpers to emit real FEATURE%/SURFACE%/OBLIGATION%/COVERAGE% ledgers quickly. Do not deep-read every handler in S1 and do not spend S1 proving vulnerabilities. Carry unresolved source-sink depth and fine-grained hypothesis expansion into S2. Never end the turn after saying \"now emitting the ledger\" or \"I have enough information\"; emit the actual ledger lines immediately in the same assistant message. In S2, do not spawn subagents yourself: the TriLane backend workflow scheduler will launch six workflow-owned child engines for identity_engine, injection_engine, ingress_engine, logic_engine, config_engine, and optional quick_hits_engine with bounded concurrency and retry/backoff, then join their structured ledgers. The first five engines own the hard-gated deep audit; quick_hits_engine is a lightweight low-hanging-fruit recovery lane and must not block S3 if empty. S3 receives a RUNBOOK_CONTEXT% merge packet built from those lane documents. Every feature/surface/obligation must receive CLAIM%/CANDIDATE% coverage or an evidence-backed not-applicable COVERAGE% note. S1/S2 breadth is scale-aware: emit BREADTH% and generate multiple independent hypotheses per active domain when route/auth/parser/object/sink complexity supports it. Use generic CVE-prior families as a checklist, not as target-specific answers. Probe/dispose every candidate, merge duplicate claim families, and report unresolved coverage or hypothesis debt instead of inventing findings. S3 is mandatory before S4: emit RUNBOOK% S3 Summary with merge/FoA/debt ledger before any RUNBOOK% S4 Fuzz. S2/S3 findings are provisional: do not call the audit complete or publish the final report until RUNBOOK% S4 Fuzz records targeted variant probing or evidence-backed skips, then RUNBOOK% S5 Verify emits ADJUDICATE% decisions and canonical final FINDING% entries.",
         audit_mode.as_marker()
     );
     format!("{control}\n\nUSER_OBJECTIVE%\n{text}")
@@ -46,6 +46,45 @@ async fn runbook_snapshot(app: &AppHandle) -> RunbookState {
     current_runbook_snapshot(&state).await
 }
 
+async fn workflow_lane_report_seen(app: &AppHandle, stage_id: &str, lane_id: &str) -> bool {
+    runbook_snapshot(app).await.lanes.iter().any(|lane| {
+        lane.stage == stage_id && lane.lane_id == lane_id && lane.report_seen
+    })
+}
+
+async fn record_synthesized_missing_lane_report(
+    app: &AppHandle,
+    stage_id: &str,
+    lane_id: &str,
+    thread_id: &str,
+    attempt: u8,
+) {
+    let marker = synthesized_missing_lane_report_marker(lane_id);
+    let summary = format!(
+        "scheduler synthesized missing LANE_REPORT% after attempt={attempt}/{WORKFLOW_LANE_MAX_ATTEMPTS}; raw lane transcript preserved"
+    );
+    mutate_runbook(app, |runbook| {
+        runbook.record_subagent_lane(RunbookLaneUpdate {
+            stage: stage_id,
+            lane_id,
+            status: "done",
+            report_seen: true,
+            claim_count: Some(0),
+            candidate_count: Some(0),
+            thread_id: Some(thread_id),
+            summary: &summary,
+        });
+    })
+    .await;
+    append_and_emit_system_message(
+        app,
+        format!(
+            "SYS% synthesized missing lane report; lane={lane_id} attempt={attempt}/{WORKFLOW_LANE_MAX_ATTEMPTS}\n{marker}\nRUNBOOK% lane debt preserved in raw S2 transcript"
+        ),
+    )
+    .await;
+}
+
 async fn start_workflow_phase(app: &AppHandle, prompt: &WorkflowPrompt) {
     let summary = if prompt.is_repair {
         format!("{} repair gate", prompt.title)
@@ -61,6 +100,30 @@ async fn start_workflow_phase(app: &AppHandle, prompt: &WorkflowPrompt) {
         format!(
             "SYS% workflow phase start\nWORKFLOW% phase={} stage={} repair={}\n{}",
             prompt.phase_id, prompt.stage_id, prompt.is_repair, prompt.title
+        ),
+    )
+    .await;
+}
+
+async fn record_workflow_phase_deferred(
+    app: &AppHandle,
+    phase_id: &str,
+    stage_id: &str,
+    title: &str,
+    reason: &str,
+) {
+    let marker = format!(
+        "RUNBOOK% S4 Fuzz: deferred {title}; preserving claims for S5 downgrade/adjudication\n\
+         S4_SKIP% id={phase_id} reason={reason}"
+    );
+    mutate_runbook(app, |runbook| {
+        runbook.record_agent_message(&marker);
+    })
+    .await;
+    append_and_emit_system_message(
+        app,
+        format!(
+            "SYS% workflow phase deferred\nWORKFLOW% deferred phase={phase_id} stage={stage_id} reason=\"{reason}\""
         ),
     )
     .await;
@@ -140,6 +203,80 @@ async fn advance_workflow_after_lane_batch(
                 let runbook = update_runbook_completed(app).await;
                 append_turn_completed_message(app, status, &runbook).await;
             }
+            WorkflowAction::DeferPhase {
+                phase_id,
+                stage_id,
+                title,
+                reason,
+                next,
+            } => {
+                record_workflow_phase_deferred(app, &phase_id, &stage_id, &title, &reason).await;
+                match *next {
+                    WorkflowAction::Submit(prompt) => {
+                        start_workflow_phase(app, &prompt).await;
+                        match submit_agent_turn(
+                            client,
+                            request_counter,
+                            root_thread_id,
+                            prompt.prompt,
+                        )
+                        .await
+                        {
+                            Ok(_resp) => {
+                                info!("Workflow phase turn started after deferred phase");
+                            }
+                            Err(e) => {
+                                let message = format!("Workflow turn start failed: {e}");
+                                *active_workflow = None;
+                                update_runbook_error(app, &message).await;
+                                append_and_emit_system_message(app, message.clone()).await;
+                                set_turn_in_progress(app, false).await;
+                            }
+                        }
+                    }
+                    WorkflowAction::SpawnLanes(next_batch) => {
+                        match start_workflow_lane_batch(
+                            client,
+                            request_counter,
+                            app,
+                            runtime_config,
+                            &next_batch,
+                        )
+                        .await
+                        {
+                            Ok(batch_runtime) => {
+                                *active_lane_batch = Some(batch_runtime);
+                            }
+                            Err(e) => {
+                                let message = format!("Workflow lane start failed: {e}");
+                                *active_workflow = None;
+                                update_runbook_error(app, &message).await;
+                                append_and_emit_system_message(app, message.clone()).await;
+                                set_turn_in_progress(app, false).await;
+                            }
+                        }
+                    }
+                    WorkflowAction::Complete => {
+                        *active_workflow = None;
+                        set_turn_in_progress(app, false).await;
+                        let runbook = update_runbook_completed(app).await;
+                        append_turn_completed_message(app, status, &runbook).await;
+                    }
+                    WorkflowAction::Blocked(message) => {
+                        *active_workflow = None;
+                        update_runbook_error(app, &message).await;
+                        append_and_emit_system_message(app, message).await;
+                        set_turn_in_progress(app, false).await;
+                    }
+                    WorkflowAction::DeferPhase { .. } => {
+                        let message = "Nested workflow deferral is not supported".to_string();
+                        *active_workflow = None;
+                        update_runbook_error(app, &message).await;
+                        append_and_emit_system_message(app, message).await;
+                        set_turn_in_progress(app, false).await;
+                    }
+                }
+            }
             WorkflowAction::Blocked(message) => {
                 *active_workflow = None;
                 update_runbook_error(app, &message).await;
@@ -194,13 +331,15 @@ async fn start_workflow_lane_batch(
     for lane in &runtime.lanes {
         record_workflow_lane_status(
             app,
-            &runtime.stage_id,
-            &lane.lane_id,
-            "queued",
-            None,
-            None,
-            None,
-            &lane.title,
+            WorkflowLaneStatus {
+                stage_id: &runtime.stage_id,
+                lane_id: &lane.lane_id,
+                status: "queued",
+                claim_count: None,
+                candidate_count: None,
+                thread_id: None,
+                summary: &lane.title,
+            },
         )
         .await;
     }
@@ -231,15 +370,18 @@ async fn start_ready_workflow_lanes(
         batch.lanes[index].mark_starting();
         let lane_id = batch.lanes[index].lane_id.clone();
         let attempt = batch.lanes[index].attempts;
+        let summary = format!("starting attempt {attempt}/{WORKFLOW_LANE_MAX_ATTEMPTS}");
         record_workflow_lane_status(
             app,
-            &batch.stage_id,
-            &lane_id,
-            "running",
-            None,
-            None,
-            None,
-            &format!("starting attempt {attempt}/{WORKFLOW_LANE_MAX_ATTEMPTS}"),
+            WorkflowLaneStatus {
+                stage_id: &batch.stage_id,
+                lane_id: &lane_id,
+                status: "running",
+                claim_count: None,
+                candidate_count: None,
+                thread_id: None,
+                summary: &summary,
+            },
         )
         .await;
 
@@ -273,15 +415,18 @@ async fn start_ready_workflow_lanes(
         };
 
         batch.lanes[index].thread_id = thread_id.clone();
+        let summary = format!("thread started; attempt {attempt}/{WORKFLOW_LANE_MAX_ATTEMPTS}");
         record_workflow_lane_status(
             app,
-            &batch.stage_id,
-            &lane_id,
-            "running",
-            None,
-            None,
-            Some(&thread_id),
-            &format!("thread started; attempt {attempt}/{WORKFLOW_LANE_MAX_ATTEMPTS}"),
+            WorkflowLaneStatus {
+                stage_id: &batch.stage_id,
+                lane_id: &lane_id,
+                status: "running",
+                claim_count: None,
+                candidate_count: None,
+                thread_id: Some(&thread_id),
+                summary: &summary,
+            },
         )
         .await;
 
@@ -349,37 +494,44 @@ async fn mark_workflow_lane_start_error(
     };
     record_workflow_lane_status(
         app,
-        &batch.stage_id,
-        &lane_id,
-        status,
-        Some(0),
-        Some(0),
-        thread_id,
-        &summary,
+        WorkflowLaneStatus {
+            stage_id: &batch.stage_id,
+            lane_id: &lane_id,
+            status,
+            claim_count: Some(0),
+            candidate_count: Some(0),
+            thread_id,
+            summary: &summary,
+        },
     )
     .await;
     append_and_emit_system_message(app, format!("SYS% lane {lane_id} {status}; {summary}")).await;
 }
 
-async fn record_workflow_lane_status(
-    app: &AppHandle,
-    stage_id: &str,
-    lane_id: &str,
-    status: &str,
+struct WorkflowLaneStatus<'a> {
+    stage_id: &'a str,
+    lane_id: &'a str,
+    status: &'a str,
     claim_count: Option<usize>,
     candidate_count: Option<usize>,
-    thread_id: Option<&str>,
-    summary: &str,
+    thread_id: Option<&'a str>,
+    summary: &'a str,
+}
+
+async fn record_workflow_lane_status(
+    app: &AppHandle,
+    status: WorkflowLaneStatus<'_>,
 ) {
     mutate_runbook(app, |runbook| {
         runbook.record_subagent_lane(RunbookLaneUpdate {
-            stage: stage_id,
-            lane_id,
-            status,
-            claim_count,
-            candidate_count,
-            thread_id,
-            summary,
+            stage: status.stage_id,
+            lane_id: status.lane_id,
+            status: status.status,
+            report_seen: false,
+            claim_count: status.claim_count,
+            candidate_count: status.candidate_count,
+            thread_id: status.thread_id,
+            summary: status.summary,
         });
     })
     .await;

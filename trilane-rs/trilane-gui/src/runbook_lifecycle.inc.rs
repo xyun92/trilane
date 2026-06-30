@@ -132,6 +132,7 @@ impl RunbookState {
             stage,
             lane_id,
             status,
+            report_seen,
             claim_count,
             candidate_count,
             thread_id,
@@ -149,6 +150,7 @@ impl RunbookState {
                 lane_id: lane_id.to_string(),
                 stage: stage.to_string(),
                 status: "spawned".to_string(),
+                report_seen: false,
                 claim_count: 0,
                 candidate_count: 0,
                 thread_id: String::new(),
@@ -157,6 +159,9 @@ impl RunbookState {
         });
         lane.stage = stage.to_string();
         lane.status = normalized_status.to_string();
+        if report_seen {
+            lane.report_seen = true;
+        }
         if let Some(count) = claim_count {
             lane.claim_count = count;
         }
@@ -204,7 +209,7 @@ impl RunbookState {
                 !self
                     .lanes
                     .iter()
-                    .any(|lane| lane.lane_id == **lane_id && lane.status == "done")
+                    .any(|lane| lane.lane_id == **lane_id && s2_lane_report_complete(lane))
             })
             .map(|lane_id| (*lane_id).to_string())
             .collect()
@@ -216,7 +221,7 @@ impl RunbookState {
             .filter(|lane_id| {
                 self.lanes
                     .iter()
-                    .any(|lane| lane.lane_id == **lane_id && lane.status == "done")
+                    .any(|lane| lane.lane_id == **lane_id && s2_lane_report_complete(lane))
             })
             .count()
     }

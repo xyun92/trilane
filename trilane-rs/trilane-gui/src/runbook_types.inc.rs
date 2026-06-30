@@ -142,6 +142,8 @@ pub struct RunbookLane {
     pub lane_id: String,
     pub stage: String,
     pub status: String,
+    #[serde(default)]
+    pub report_seen: bool,
     pub claim_count: usize,
     pub candidate_count: usize,
     pub thread_id: String,
@@ -153,6 +155,7 @@ pub struct RunbookLaneUpdate<'a> {
     pub stage: &'a str,
     pub lane_id: &'a str,
     pub status: &'a str,
+    pub report_seen: bool,
     pub claim_count: Option<usize>,
     pub candidate_count: Option<usize>,
     pub thread_id: Option<&'a str>,

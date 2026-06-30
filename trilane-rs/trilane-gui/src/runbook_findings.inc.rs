@@ -106,6 +106,7 @@ impl RunbookState {
             }
             let lower = line.to_ascii_lowercase();
             if lower.starts_with("subagent%") || lower.starts_with("lane_report%") {
+                let report_seen = lower.starts_with("lane_report%");
                 let lane_id = marker_value(line, "lane")
                     .or_else(|| marker_value(line, "id"))
                     .unwrap_or_else(|| "unknown".to_string());
@@ -125,6 +126,7 @@ impl RunbookState {
                     stage: current_stage,
                     lane_id: &lane_id,
                     status: &status,
+                    report_seen,
                     claim_count,
                     candidate_count,
                     thread_id: thread_id.as_deref(),

@@ -77,7 +77,7 @@
     }
 
     #[test]
-    fn subagent_lane_markers_drive_s2_completion_for_release_path() {
+    fn subagent_lane_markers_do_not_drive_s2_completion() {
         let mut state = RunbookState::default();
         state.start_turn("test target", AuditMode::Lab);
         state.record_workflow_phase("stage2", "S2 concurrent audit");
@@ -85,16 +85,24 @@
         state.record_agent_message(
             "SUBAGENT% lane=identity_engine status=done claims=4 candidates=5 thread_id=t1\n\
              SUBAGENT% lane=injection_engine status=done claims=6 candidates=8 thread_id=t2\n\
-             SUBAGENT% lane=edge_surface_engine status=done claims=4 candidates=6 thread_id=t3\n\
-             SUBAGENT% lane=ingress_engine status=done claims=3 candidates=4 thread_id=t4\n\
-             SUBAGENT% lane=logic_engine status=done claims=5 candidates=6 thread_id=t5\n\
-             SUBAGENT% lane=config_engine status=done claims=2 candidates=3 thread_id=t6",
+             SUBAGENT% lane=ingress_engine status=done claims=3 candidates=4 thread_id=t3\n\
+             SUBAGENT% lane=logic_engine status=done claims=5 candidates=6 thread_id=t4\n\
+             SUBAGENT% lane=config_engine status=done claims=2 candidates=3 thread_id=t5",
         );
 
-        assert!(state.s2_required_lanes_complete());
-        assert_eq!(state.s2_completed_lane_count(), 6);
-        assert_eq!(state.s2_missing_lanes(), Vec::<String>::new());
-        assert_eq!(state.lanes.len(), 6);
+        assert!(!state.s2_required_lanes_complete());
+        assert_eq!(state.s2_completed_lane_count(), 0);
+        assert_eq!(
+            state.s2_missing_lanes(),
+            vec![
+                "identity_engine",
+                "injection_engine",
+                "ingress_engine",
+                "logic_engine",
+                "config_engine"
+            ]
+        );
+        assert_eq!(state.lanes.len(), 5);
     }
 
     #[test]
@@ -106,16 +114,15 @@
         state.record_agent_message(
             "LANE_REPORT% lane=identity_engine status=done claims=4 candidates=5 note=identity complete\n\
              LANE_REPORT% lane=injection_engine status=done claims=6 candidates=8 note=injection complete\n\
-             LANE_REPORT% lane=edge_surface_engine status=done claims=4 candidates=6 note=edge surface complete\n\
              LANE_REPORT% lane=ingress_engine status=done claims=3 candidates=4 note=file lanes complete\n\
              LANE_REPORT% lane=logic_engine status=done claims=5 candidates=6 note=logic lanes complete\n\
              LANE_REPORT% lane=config_engine status=done claims=2 candidates=3 note=config lanes complete",
         );
 
         assert!(state.s2_required_lanes_complete());
-        assert_eq!(state.s2_completed_lane_count(), 6);
+        assert_eq!(state.s2_completed_lane_count(), 5);
         assert_eq!(state.s2_missing_lanes(), Vec::<String>::new());
-        assert_eq!(state.lanes.len(), 6);
+        assert_eq!(state.lanes.len(), 5);
     }
 
     #[test]

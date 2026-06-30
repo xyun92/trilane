@@ -1,12 +1,15 @@
-fn required_s2_lanes() -> [&'static str; 6] {
+fn required_s2_lanes() -> [&'static str; 5] {
     [
         "identity_engine",
         "injection_engine",
         "ingress_engine",
         "logic_engine",
         "config_engine",
-        "edge_surface_engine",
     ]
+}
+
+fn s2_lane_report_complete(lane: &RunbookLane) -> bool {
+    lane.status == "done" && lane.report_seen
 }
 
 fn normalize_lane_status(status: &str) -> &'static str {
