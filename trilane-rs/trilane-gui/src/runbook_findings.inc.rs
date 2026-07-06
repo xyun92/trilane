@@ -105,8 +105,7 @@ impl RunbookState {
                 current_stage = marker_stage;
             }
             let lower = line.to_ascii_lowercase();
-            if lower.starts_with("subagent%") || lower.starts_with("lane_report%") {
-                let report_seen = lower.starts_with("lane_report%");
+            if lower.starts_with("subagent%") {
                 let lane_id = marker_value(line, "lane")
                     .or_else(|| marker_value(line, "id"))
                     .unwrap_or_else(|| "unknown".to_string());
@@ -126,7 +125,6 @@ impl RunbookState {
                     stage: current_stage,
                     lane_id: &lane_id,
                     status: &status,
-                    report_seen,
                     claim_count,
                     candidate_count,
                     thread_id: thread_id.as_deref(),
@@ -153,6 +151,37 @@ impl RunbookState {
                     .or_else(|| marker_value(line, "title"))
                     .unwrap_or_else(|| target.clone());
                 self.record_surface(current_stage, &kind, &category, &label, &target);
+                attack_graph_dirty = true;
+            } else if lower.starts_with("read_target%") {
+                let category =
+                    marker_value(line, "category").unwrap_or_else(|| infer_category(line));
+                let Some(target) = marker_value(line, "target")
+                    .or_else(|| marker_value(line, "path"))
+                    .or_else(|| marker_value(line, "read"))
+                    .or_else(|| marker_value(line, "endpoint")) else {
+                    continue;
+                };
+                let lane = marker_value(line, "lane").unwrap_or_else(|| "any".to_string());
+                let priority =
+                    marker_value(line, "priority").unwrap_or_else(|| "medium".to_string());
+                let read_kind =
+                    marker_value(line, "kind").unwrap_or_else(|| "source-read".to_string());
+                let reason = marker_value(line, "reason")
+                    .or_else(|| marker_value(line, "must"))
+                    .unwrap_or_else(|| "s1-directed-read".to_string());
+                let anchor = marker_value(line, "anchor").unwrap_or_default();
+                let follow = marker_value(line, "follow").unwrap_or_default();
+                let question = marker_value(line, "question").unwrap_or_default();
+                let stop_when = marker_value(line, "stop_when").unwrap_or_default();
+                let broaden_after = marker_value(line, "broaden_after").unwrap_or_default();
+                let endpoint = marker_value(line, "endpoint").unwrap_or_default();
+                let object_id = marker_value(line, "object_id").unwrap_or_default();
+                let auth_hint = marker_value(line, "auth_hint").unwrap_or_default();
+                let ownership_hint = marker_value(line, "ownership_hint").unwrap_or_default();
+                let label = format!(
+                    "lane={lane} ownership_hint={ownership_hint} priority={priority} question={question} stop_when={stop_when} broaden_after={broaden_after} read_kind={read_kind} reason={reason} endpoint={endpoint} object_id={object_id} auth_hint={auth_hint} anchor={anchor} follow={follow}"
+                );
+                self.record_surface(current_stage, "read_target", &category, &label, &target);
                 attack_graph_dirty = true;
             } else if lower.starts_with("feature%") {
                 let category =

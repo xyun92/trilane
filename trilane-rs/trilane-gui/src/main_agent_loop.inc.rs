@@ -13,10 +13,26 @@ async fn agent_event_loop(
         tokio::select! {
             Some(cmd) = cmd_rx.recv() => {
                 match cmd {
-                    AgentCommand::SendMessage { text, audit_mode } => {
+                    AgentCommand::SendMessage {
+                        text,
+                        audit_mode,
+                        resume_stage,
+                    } => {
                         warn!("GUI send_message received text_len={}", text.len());
                         active_lane_batch = None;
-                        let mut workflow = TriLaneWorkflow::new(text.clone());
+                        let mut workflow = match resume_stage.as_deref() {
+                            Some(stage) => match TriLaneWorkflow::new_from_stage(text.clone(), stage)
+                            {
+                                Ok(workflow) => workflow,
+                                Err(message) => {
+                                    append_and_emit_system_message(&app, message.clone()).await;
+                                    update_runbook_error(&app, &message).await;
+                                    set_turn_in_progress(&app, false).await;
+                                    continue;
+                                }
+                            },
+                            None => TriLaneWorkflow::new(text.clone()),
+                        };
                         let snapshot = runbook_snapshot(&app).await;
                         let agent_input = match workflow.begin(&snapshot) {
                             WorkflowAction::Submit(prompt) => {
@@ -89,6 +105,7 @@ async fn agent_event_loop(
             }
             _ = tokio::time::sleep(WORKFLOW_LANE_RETRY_TICK), if active_lane_batch.is_some() => {
                 if let Some(batch) = active_lane_batch.as_mut() {
+                    recover_idle_workflow_lanes(&app, batch).await;
                     let start_result = start_ready_workflow_lanes(
                         &client,
                         &mut request_counter,
@@ -137,6 +154,9 @@ async fn agent_event_loop(
                     Some(ServerEvent::ServerNotification(notification)) => {
                         match notification {
                             ServerNotification::AgentMessageDelta(delta) => {
+                                if let Some(batch) = active_lane_batch.as_mut() {
+                                    batch.mark_activity(&delta.thread_id, &delta.turn_id);
+                                }
                                 update_runbook_from_agent_delta(
                                     &app,
                                     &delta.item_id,
@@ -151,6 +171,9 @@ async fn agent_event_loop(
                                 });
                             }
                             ServerNotification::CommandExecutionOutputDelta(delta) => {
+                                if let Some(batch) = active_lane_batch.as_mut() {
+                                    batch.mark_activity(&delta.thread_id, &delta.turn_id);
+                                }
                                 emit_fe(&app, FrontendEvent::CommandOutputDelta {
                                     thread_id: delta.thread_id,
                                     turn_id: delta.turn_id,
@@ -159,6 +182,9 @@ async fn agent_event_loop(
                                 });
                             }
                             ServerNotification::ItemCompleted(item) => {
+                                if let Some(batch) = active_lane_batch.as_mut() {
+                                    batch.mark_activity(&item.thread_id, &item.turn_id);
+                                }
                                 let (item_type, role, text) =
                                     frontend_item_completed_payload(&item.item);
                                 flush_pending_runbook_markers(&app).await;
@@ -187,91 +213,33 @@ async fn agent_event_loop(
                                     turn.turn.error.as_ref().map(|error| error.message.clone());
                                 let status = format!("{:?}", turn.turn.status);
 
-                                let lane_report_context =
-                                    active_lane_batch.as_ref().and_then(|batch| {
-                                        batch.lane_index_by_thread(&turn.thread_id).map(|index| {
-                                            (
-                                                batch.phase_id.clone(),
-                                                batch.stage_id.clone(),
-                                                batch.lanes[index].lane_id.clone(),
-                                            )
-                                        })
-                                    });
-                                let lane_report_seen = if let Some((
-                                    phase_id,
-                                    stage_id,
-                                    lane_id,
-                                )) = lane_report_context.as_ref()
-                                {
-                                    !requires_workflow_lane_report(phase_id, lane_id)
-                                        || workflow_lane_report_seen(&app, stage_id, lane_id).await
-                                } else {
-                                    false
-                                };
-
                                 let lane_completion =
                                     if let Some(batch) = active_lane_batch.as_mut() {
                                         if let Some(index) =
-                                            batch.lane_index_by_thread(&turn.thread_id)
+                                            batch.lane_index_by_event(&turn.thread_id, &turn.turn.id)
                                         {
-                                            let phase_id = batch.phase_id.clone();
                                             let stage_id = batch.stage_id.clone();
                                             let lane_id = batch.lanes[index].lane_id.clone();
-                                            let attempt = batch.lanes[index].attempts;
                                             let retryable_error = turn_error
                                                 .as_deref()
                                                 .is_some_and(is_retryable_lane_error);
-                                            let missing_required_report = turn_error.is_none()
-                                                && requires_workflow_lane_report(
-                                                    &phase_id, &lane_id,
-                                                )
-                                                && !lane_report_seen;
                                             let should_retry_error = turn_error.as_deref().is_some()
                                                 && retryable_error
                                                 && batch.can_retry(index);
-                                            let should_retry_report =
-                                                missing_required_report && batch.can_retry(index);
-                                            let (lane_status, lane_detail, synthesize_report) = if should_retry_error {
+                                            let (lane_status, lane_detail) = if should_retry_error {
+                                                let attempt = batch.lanes[index].attempts;
                                                 if let Some(error) = turn_error.as_deref() {
                                                     let delay = batch.retry_lane(index, error);
                                                     (
                                                         "retrying",
                                                         retry_status_summary(error, attempt, delay),
-                                                        false,
                                                     )
                                                 } else {
                                                     (
                                                         "failed",
                                                         "missing retryable lane error".to_string(),
-                                                        false,
                                                     )
                                                 }
-                                            } else if should_retry_report {
-                                                let error =
-                                                    "lane turn completed without required LANE_REPORT%";
-                                                batch.lanes[index].prompt =
-                                                    missing_lane_report_repair_prompt(
-                                                        &batch.lanes[index].prompt,
-                                                        &lane_id,
-                                                    );
-                                                let delay = batch.retry_lane(index, error);
-                                                (
-                                                    "retrying",
-                                                    format!(
-                                                        "missing required LANE_REPORT%; attempt={attempt}/{WORKFLOW_LANE_MAX_ATTEMPTS} retry_after={}s",
-                                                        delay.as_secs()
-                                                    ),
-                                                    false,
-                                                )
-                                            } else if missing_required_report {
-                                                batch.finish_lane(index, /*failed*/ false);
-                                                (
-                                                    "done",
-                                                    format!(
-                                                        "scheduler synthesized missing LANE_REPORT% after attempt={attempt}/{WORKFLOW_LANE_MAX_ATTEMPTS}"
-                                                    ),
-                                                    true,
-                                                )
                                             } else {
                                                 batch.finish_lane(index, turn_error.is_some());
                                                 (
@@ -284,16 +252,13 @@ async fn agent_event_loop(
                                                         .as_deref()
                                                         .unwrap_or("lane turn completed")
                                                         .to_string(),
-                                                    false,
                                                 )
                                             };
                                             Some((
                                                 stage_id,
                                                 lane_id,
-                                                attempt,
                                                 lane_status.to_string(),
                                                 lane_detail,
-                                                synthesize_report,
                                             ))
                                         } else {
                                             None
@@ -305,23 +270,11 @@ async fn agent_event_loop(
                                 if let Some((
                                     stage_id,
                                     lane_id,
-                                    lane_attempt,
                                     lane_status,
                                     lane_detail,
-                                    synthesize_report,
                                 )) =
                                     lane_completion
                                 {
-                                    if synthesize_report {
-                                        record_synthesized_missing_lane_report(
-                                            &app,
-                                            &stage_id,
-                                            &lane_id,
-                                            &turn.thread_id,
-                                            lane_attempt,
-                                        )
-                                        .await;
-                                    }
                                     record_workflow_lane_status(
                                         &app,
                                         WorkflowLaneStatus {
@@ -418,6 +371,7 @@ async fn agent_event_loop(
 
                                 let workflow_action = if let Some(workflow) = active_workflow.as_mut() {
                                     let snapshot = runbook_snapshot(&app).await;
+                                    record_stage_snapshot(&app, &snapshot, &status).await;
                                     Some(workflow.after_turn_completed(&snapshot))
                                 } else {
                                     None

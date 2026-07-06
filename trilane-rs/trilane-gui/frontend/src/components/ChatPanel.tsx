@@ -20,6 +20,7 @@ interface Props {
 
 const MAX_RENDERED_LINES = 120;
 const COLLAPSED_SYSTEM_LINES = 3;
+const STAGE_OPTIONS = ["stage0", "stage1", "stage2", "stage3", "stage4", "stage5"];
 
 type PendingAuditMode = {
   nextMode: "safe" | "lab";
@@ -40,16 +41,31 @@ export default function ChatPanel({
   const [isLoading, setIsLoading] = useState(false);
   const [expandedSystemMessages, setExpandedSystemMessages] = useState<Set<string>>(new Set());
   const [pendingAuditMode, setPendingAuditMode] = useState<PendingAuditMode | null>(null);
+  const [runIds, setRunIds] = useState<string[]>([]);
+  const [resumeRunId, setResumeRunId] = useState("");
+  const [resumeStage, setResumeStage] = useState("stage2");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
-    const userMsg = input.trim();
-    setInput("");
+  useEffect(() => {
+    void refreshRuns();
+  }, []);
+
+  const refreshRuns = async () => {
+    try {
+      const runs = await invokeWithTimeout<string[]>("list_trilane_runs", undefined, 5000);
+      setRunIds(runs);
+      setResumeRunId((current) => current || runs[0] || "");
+    } catch (error) {
+      console.error("Failed to list TriLane runs:", error);
+    }
+  };
+
+  const submitText = async (userMsg: string) => {
+    if (!userMsg.trim() || isLoading) return;
     setIsLoading(true);
 
     setMessages((prev) => [
@@ -94,6 +110,21 @@ export default function ChatPanel({
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSend = async () => {
+    if (!input.trim() || isLoading) return;
+    const userMsg = input.trim();
+    setInput("");
+    await submitText(userMsg);
+  };
+
+  const handleResumeRun = async () => {
+    if (!resumeRunId || isLoading) return;
+    const extra = input.trim();
+    const userMsg = `TRILANE_RESUME_RUN% run=${resumeRunId} stage=${resumeStage}${extra ? `\n\n${extra}` : ""}`;
+    setInput("");
+    await submitText(userMsg);
   };
 
   const pollChatHistory = () => new Promise<void>((resolve) => {
@@ -292,6 +323,30 @@ export default function ChatPanel({
           <div className="rail-row"><span>mode</span><strong>{auditMode}</strong></div>
           <div className="rail-row"><span>scope</span><strong>workspace</strong></div>
           <div className="rail-row"><span>io</span><strong>tauri/ipc</strong></div>
+          <div className="resume-control">
+            <div className="rail-title">RESUME RUN</div>
+            <select value={resumeRunId} onChange={(e) => setResumeRunId(e.target.value)}>
+              {runIds.length === 0 && <option value="">no runs</option>}
+              {runIds.map((runId) => (
+                <option key={runId} value={runId}>{runId}</option>
+              ))}
+            </select>
+            <select value={resumeStage} onChange={(e) => setResumeStage(e.target.value)}>
+              {STAGE_OPTIONS.map((stage) => (
+                <option key={stage} value={stage}>{stage.toUpperCase()}</option>
+              ))}
+            </select>
+            <div className="resume-actions">
+              <button type="button" onClick={() => void refreshRuns()}>REFRESH</button>
+              <button
+                type="button"
+                onClick={() => void handleResumeRun()}
+                disabled={!resumeRunId || isLoading}
+              >
+                RERUN
+              </button>
+            </div>
+          </div>
           <div className="rail-meter">
             <span>signal</span>
             <div><i /><i /><i /><i className={agentStarted ? "" : "off"} /></div>

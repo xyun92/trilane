@@ -31,6 +31,22 @@ async function main() {
     return;
   }
 
+  if (command === "runs") {
+    listRuns();
+    return;
+  }
+
+  if (command === "resume") {
+    const resume = parseResumeArgs(process.argv.slice(3));
+    const target = await resolveLaunchTarget({ allowDownload: true });
+    runLaunchTarget(target, [
+      "--trilane-resume-run", resume.runId,
+      "--trilane-resume-stage", resume.stage,
+      ...(resume.note ? ["--trilane-resume-note", resume.note] : []),
+    ]);
+    return;
+  }
+
   if (command !== "app") {
     console.error(`TriLane: unknown command ${JSON.stringify(command)}`);
     printHelp();
@@ -46,6 +62,9 @@ function printHelp() {
 
 Usage:
   trilane app        Launch the TriLane desktop app
+  trilane runs       List local TriLane run ids
+  trilane resume --run <id> --stage <s0-s5> [--note <text>]
+                     Launch the app and rerun a saved experiment from a stage
   trilane doctor     Verify that this npm package can find a runnable binary
   trilane --version  Print the package version
 
@@ -54,6 +73,61 @@ Environment:
   TRILANE_VERSION      Override the release version used for downloads
   TRILANE_RELEASE_BASE Override the GitHub release URL base
 `);
+}
+
+function listRuns() {
+  const root = path.join(os.homedir(), ".trilane", "runs");
+  if (!fs.existsSync(root)) {
+    return;
+  }
+  const runs = fs.readdirSync(root, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .filter((name) => /^[A-Za-z0-9_.-]+$/.test(name))
+    .filter((name) => fs.existsSync(path.join(root, name, "stage0")))
+    .sort()
+    .reverse();
+  for (const run of runs) {
+    console.log(run);
+  }
+}
+
+function parseResumeArgs(args) {
+  let runId = "";
+  let stage = "";
+  const note = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === "--run" || arg === "--run-id") {
+      runId = args[++i] || "";
+    } else if (arg === "--stage") {
+      stage = args[++i] || "";
+    } else if (arg === "--note" || arg === "--instruction") {
+      note.push(args[++i] || "");
+    } else {
+      note.push(arg);
+    }
+  }
+  if (!runId || !/^[A-Za-z0-9_.-]+$/.test(runId)) {
+    throw new Error("resume requires --run <id>");
+  }
+  const normalizedStage = normalizeStage(stage);
+  return {
+    runId,
+    stage: normalizedStage,
+    note: note.join(" ").trim(),
+  };
+}
+
+function normalizeStage(stage) {
+  const value = String(stage || "").trim().toLowerCase();
+  if (/^stage[0-5]$/.test(value)) {
+    return value;
+  }
+  if (/^s[0-5]$/.test(value)) {
+    return `stage${value.slice(1)}`;
+  }
+  throw new Error("resume requires --stage <s0-s5>");
 }
 
 function runDoctor() {

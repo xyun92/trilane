@@ -32,7 +32,7 @@ fn cve_prior_contract() -> &'static str {
      - Files/Parsers/Egress: upload parser abuse, XXE/YAML/deserialization, archive/path traversal, LFI/file write, SSRF and open redirect.\n\
      - Logic/Automation: state-invariant abuse, coupon/payment/wallet/order/review/export workflow bypass, recovery/reset/security-question/CAPTCHA/rate-limit bypass.\n\
      - Config/Observability/Crypto: hardcoded secrets, public config/docs/logs/metrics/debug/static files, weak hashes, JWT/key/signature/cookie issues.\n\
-     - Obligation rule: when a feature matches a prior family, emit OBLIGATION% first; close it with CLAIM%/PROBE%/CONTROL%/REJECTED%/COVERAGE% not_applicable."
+     - S2 rule: use this only to seed high-value CLAIM% candidates; proof, rejection, controls, and final findings belong to S4/S5."
 }
 
 fn s2_lane_batch(
@@ -43,17 +43,20 @@ fn s2_lane_batch(
 ) -> WorkflowLaneBatch {
     let mut lanes = if is_repair {
         state.s2_missing_lanes()
+    } else if state.s2_required_lanes_complete() && !state.s2_quick_hits_finished() {
+        vec![quick_hits_lane_id().to_string()]
     } else {
-        s2_lane_ids()
+        s2_core_lane_ids()
             .iter()
             .map(|lane| (*lane).to_string())
             .collect::<Vec<_>>()
     };
     if lanes.is_empty() {
-        lanes = s2_lane_ids()
-            .iter()
-            .map(|lane| (*lane).to_string())
-            .collect::<Vec<_>>();
+        if !state.s2_required_lanes_complete() {
+            lanes = state.s2_missing_lanes();
+        } else if !state.s2_quick_hits_finished() {
+            lanes = vec![quick_hits_lane_id().to_string()];
+        }
     }
     WorkflowLaneBatch {
         phase_id: phase.id.to_string(),
@@ -62,7 +65,11 @@ fn s2_lane_batch(
         lanes: lanes
             .into_iter()
             .map(|lane_id| {
-                let s1_ledger = compact_s1_lane_ledger(state, &lane_id, /*max_surfaces*/ 56);
+                let mut s1_ledger = compact_s1_lane_ledger(state, &lane_id, /*max_surfaces*/ 40);
+                if lane_id == quick_hits_lane_id() && state.s2_required_lanes_complete() {
+                    s1_ledger.push_str("\n\nCORE_LANE_CONTEXT%\n");
+                    s1_ledger.push_str(&compact_claim_packet(state, /*max_items*/ 60));
+                }
                 WorkflowLaneSpec {
                     title: s2_lane_title(&lane_id).to_string(),
                     prompt: s2_lane_prompt(&lane_id, objective, &s1_ledger, is_repair),
@@ -74,15 +81,18 @@ fn s2_lane_batch(
     }
 }
 
-pub fn s2_lane_ids() -> [&'static str; 6] {
+fn s2_core_lane_ids() -> [&'static str; 5] {
     [
         "identity_engine",
         "injection_engine",
         "ingress_engine",
         "logic_engine",
         "config_engine",
-        "quick_hits_engine",
     ]
+}
+
+fn quick_hits_lane_id() -> &'static str {
+    "quick_hits_engine"
 }
 
 fn s2_lane_title(lane_id: &str) -> &'static str {
@@ -115,7 +125,7 @@ fn s2_lane_task(lane_id: &str) -> &'static str {
             "Engine categories: secrets_config, observability_leak, crypto. Audit hardcoded secrets, test credentials, API keys, TOTP seeds, exposed keys/config/logs/docs/metrics/debug routes, weak crypto/hash choices, JWT key/algorithm handling, and exploitable disclosure impact."
         }
         "quick_hits_engine" => {
-            "Engine categories: cross-lane low-hanging fruit mapped back into the existing TriLane taxonomy. Run a short rg-first recovery pass for high-yield missed families: raw SQL/query interpolation, eval/vm/template sinks, res.jsonp/callback and DOM/browser sinks, wildcard CORS/header gaps, exposed /metrics/docs/logs/config/static files, JWT alg/key confusion, hardcoded secrets/weak hashes, mass assignment, IDOR in basket/order/payment/review/export, coupon/wallet/payment invariant abuse, reset/security-answer/CAPTCHA/rate-limit gaps, upload/parser/traversal, SSRF, and open redirect substring/allowlist bypasses. Keep it lightweight and ledger-first; do not repeat every trace from the five deep lanes."
+            "Engine categories: residual cross-lane low-hanging fruit mapped back into the existing TriLane taxonomy. Read SOURCE_PACKET and CORE_LANE_CONTEXT first. Run only the fixed quick-hit edge checklist plus any unclosed high-value S1 obligation in the packet. Do not do broad exploration. New residual claims must use QH-CAND-* ids and must be emitted as CLAIM% lines, not prose."
         }
         _ => "Audit the assigned domain and emit machine-readable evidence.",
     }
@@ -136,24 +146,35 @@ fn s2_lane_prompt(lane_id: &str, objective: &str, s1_ledger: &str, is_repair: bo
          S1_LEDGER%\n{}\n\n\
          {}\n\n\
          LANE_TASK%\n{}\n\n\
+         {}\n\
          OUTPUT_CONTRACT%\n\
          - You are a workflow-owned child lane. Do not write the final report.\n\
-         - Read focused source files/routes for this lane. Prefer rg over broad cat.\n\
-         - Emit many compact markers, not prose-only summaries.\n\
-         - Use FEATURE%, OBLIGATION%, SURFACE%, CANDIDATE%, CLAIM%, PROBE%, CONTROL%, REJECTED%, DUPLICATE%, MERGE%, and provisional FINDING% when evidence supports it.\n\
-         - Also emit ATTACK_ATOM% for reusable exploit facts: kind=<surface|guard|primitive|secret|invariant|sink|side_effect> category=<domain> target=<route/file/object> label=<short> bridge_keys=<comma-list> claim=<claim-id> evidence=<short> confidence=<signal|medium|high>.\n\
-         - Close every relevant S1 OBLIGATION% in your lane: upgrade to CLAIM%, disprove with REJECTED%, or emit COVERAGE% not_applicable with evidence.\n\
-         - The S1 ledger may include a few cross-lane weak-signal OBLIGATION% seeds. Do not discard them solely because the taxonomy looks adjacent; inspect the nearest helper/route/middleware file first, then reject with evidence if they truly do not belong.\n\
-         - For every high-value claim include source/root cause, route or file:line, exploit primitive, expected impact, and a negative-control idea.\n\
-         - Preserve recall: do not keep only top 5 findings; emit all credible candidates in this lane.\n\
-         - Scheduler SUBAGENT% completion does not count as your lane report; a core lane that ends without a non-empty LANE_REPORT% is incomplete and will be repaired.\n\
-         - Finish with exactly one LANE_REPORT% lane={lane_id} status=done claims=<n> candidates=<n> note=<short> line.\n",
+         - S2 is candidate discovery only. The only machine-readable marker you may emit is CLAIM%.\n\
+         - Consume SOURCE_PACKET% first as a lane-specific task packet, not as a full-history transcript. Follow S1 READ_TARGET% items assigned to this lane, then stop or broaden only once inside your assigned domain if a high-value candidate is obvious.\n\
+         - Emit every credible CLAIM% candidate in your assigned lane. If no credible candidate exists, end the turn without emitting a marker.\n\
+         - CLAIM% format: CLAIM% id=<lane-prefix>-<n> category=<taxonomy> target=<file-or-route> severity=<critical|high|medium|low> confidence=<low|medium|high> title=<short> reason=<short-source-reason> impact=<short> next=<s4-check>.\n\
+         - Use lane-specific ids: identity uses ID-*, injection uses INJ-CAND-* / XSS-CAND-* / CORS-CAND-*, ingress uses ING-*, logic uses LOGIC-CAND-*, config uses CONFIG-CAND-*, quick_hits uses QH-CAND-*.\n\
+         - Do not emit any non-CLAIM machine-readable marker in S2. Do not write proof, rejection, duplicate, merge, atom, candidate, coverage, probe, control, finding, summary, or lane-completion rows.\n\
+         - Do not prove, reject, dedupe, repair payloads, run live exploit loops, write controls, write PoCs, or write summaries in S2. S3 merges, S4 verifies, and S5 produces final PoCs/findings.\n\
+         - Keep visible prose minimal. Prefer rg/sed source reads and compact CLAIM% lines; do not narrate routine planning with phrases like \"Let me\", \"I need\", or \"Now I\".\n",
         s2_lane_title(lane_id),
         objective.trim(),
         s1_ledger,
         cve_prior_contract(),
-        s2_lane_task(lane_id)
+        s2_lane_task(lane_id),
+        s2_quick_hits_checklist(lane_id)
     )
+}
+
+fn s2_quick_hits_checklist(lane_id: &str) -> &'static str {
+    if lane_id != quick_hits_lane_id() {
+        return "";
+    }
+    "QUICK_HITS_CHECKLIST%\n\
+	     - Check only these residual edges unless SOURCE_PACKET% shows an unclosed high-value obligation: JWT none/HS256/key confusion, 2FA/TOTP plaintext, reset-password HMAC/answer flow, whoami/JSONP/password-hash leak, image CAPTCHA answer/skip, accounting/order-history token gates, verbose error/debug exposure, Swagger/config/version/docs exposure, hardcoded API keys/secrets, and one missed IDOR/mass-assignment/business invariant.\n\
+	     - Emit only new residual CLAIM% lines. Do not emit any other machine-readable row.\n\
+	     - No exploratory prose or self-debate. Use bounded rg/sed source reads as needed, then decide from SOURCE_PACKET% and CORE_LANE_CONTEXT.\n\
+	     - Emit every credible QH-CAND-* claim. If the checklist adds nothing credible, end the turn without a marker.\n\n"
 }
 
 fn s5_review_lane_batch(
@@ -212,7 +233,7 @@ fn compact_s5_review_packet(state: &RunbookState, max_items: usize) -> String {
     for lane in &state.lanes {
         if lane.lane_id == "final_report_review" {
             lines.push(format!(
-                "LANE_REPORT% lane={} status={} claims={} thread_id={} note={}",
+                "SUBAGENT% lane={} status={} claims={} thread_id={} note={}",
                 lane.lane_id, lane.status, lane.claim_count, lane.thread_id, lane.summary
             ));
         }
@@ -393,6 +414,28 @@ fn s2_lane_text_matches(lane_id: &str, parts: &[&str]) -> bool {
             .any(|keyword| haystack.contains(keyword))
 }
 
+fn s1_read_target_matches_lane(
+    lane_id: &str,
+    kind: &str,
+    category: &str,
+    label: &str,
+    target: &str,
+) -> bool {
+    if kind != "read_target" {
+        return false;
+    }
+    let haystack = [category, label, target]
+        .iter()
+        .filter(|part| !part.trim().is_empty())
+        .map(|part| part.to_ascii_lowercase())
+        .collect::<Vec<_>>()
+        .join(" ");
+    lane_id == quick_hits_lane_id()
+        || haystack.contains(&format!("lane={lane_id}"))
+        || haystack.contains("lane=any")
+        || s2_lane_text_matches(lane_id, &[category, kind, label, target])
+}
+
 fn s2_cross_lane_seed_matches(lane_id: &str, parts: &[&str]) -> bool {
     let haystack = parts
         .iter()
@@ -417,6 +460,7 @@ fn compact_s1_lane_ledger(state: &RunbookState, lane_id: &str, max_surfaces: usi
         state.candidates.len(),
         state.claims.len()
     ));
+    lines.push(compact_s2_source_packet(state, lane_id));
     let lane_categories = s2_lane_categories(lane_id);
     for coverage in state.coverage.iter().filter(|coverage| {
         coverage.status != crate::runbook::CoverageStatus::Pending
@@ -426,24 +470,36 @@ fn compact_s1_lane_ledger(state: &RunbookState, lane_id: &str, max_surfaces: usi
     }) {
         lines.push(format!(
             "COVERAGE% category={} mapped={} total={} label={}",
-            coverage.category,
+            marker_token(&coverage.category, 48),
             coverage.mapped_count,
             coverage.total_hint.unwrap_or(0),
-            coverage.label
+            marker_text(&coverage.label, 120)
         ));
     }
 
-    let relevant_surfaces = state
+    let mut relevant_surfaces = state
         .surfaces
         .iter()
         .filter(|surface| {
-            s2_lane_text_matches(
+            s1_read_target_matches_lane(
                 lane_id,
-                &[&surface.category, &surface.kind, &surface.label, &surface.target],
-            )
+                &surface.kind,
+                &surface.category,
+                &surface.label,
+                &surface.target,
+            ) || s2_lane_text_matches(
+                    lane_id,
+                    &[
+                        &surface.category,
+                        &surface.kind,
+                        &surface.label,
+                        &surface.target,
+                    ],
+                )
         })
-        .take(max_surfaces)
         .collect::<Vec<_>>();
+    relevant_surfaces.sort_by_key(|surface| usize::from(surface.kind != "read_target"));
+    relevant_surfaces.truncate(max_surfaces);
     let fallback_surfaces = relevant_surfaces.is_empty();
     let surfaces = if fallback_surfaces {
         state.surfaces.iter().take(max_surfaces).collect::<Vec<_>>()
@@ -451,10 +507,22 @@ fn compact_s1_lane_ledger(state: &RunbookState, lane_id: &str, max_surfaces: usi
         relevant_surfaces
     };
     for surface in surfaces {
-        lines.push(format!(
-            "SURFACE% kind={} category={} target={} label={}",
-            surface.kind, surface.category, surface.target, surface.label
-        ));
+        if surface.kind == "read_target" {
+            lines.push(format!(
+                "READ_TARGET% category={} target={} label={}",
+                marker_token(&surface.category, 48),
+                marker_target(&surface.target, &surface.label, 160),
+                marker_text(&surface.label, 260)
+            ));
+        } else {
+            lines.push(format!(
+                "SURFACE% kind={} category={} target={} label={}",
+                marker_token(&surface.kind, 48),
+                marker_token(&surface.category, 48),
+                marker_target(&surface.target, &surface.label, 120),
+                marker_text(&surface.label, 120)
+            ));
+        }
     }
     for candidate in state
         .candidates
@@ -470,7 +538,11 @@ fn compact_s1_lane_ledger(state: &RunbookState, lane_id: &str, max_surfaces: usi
     {
         lines.push(format!(
             "OBLIGATION% id={} category={} target={} must={} evidence=s1_candidate_status:{:?}",
-            candidate.id, candidate.category, candidate.target, candidate.title, candidate.status
+            marker_text(&candidate.id, 48),
+            marker_token(&candidate.category, 48),
+            marker_target(&candidate.target, &candidate.title, 120),
+            marker_text(&candidate.title, 180),
+            candidate.status
         ));
     }
     let mut shared_candidates = state
@@ -506,10 +578,10 @@ fn compact_s1_lane_ledger(state: &RunbookState, lane_id: &str, max_surfaces: usi
     for candidate in shared_candidates.into_iter().take(max_surfaces / 8) {
         lines.push(format!(
             "OBLIGATION% id={} category={} target={} must={} evidence=s1_cross_lane_seed:evidence_count={}:source_confirmed={}",
-            candidate.id,
-            candidate.category,
-            candidate.target,
-            candidate.title,
+            marker_text(&candidate.id, 48),
+            marker_token(&candidate.category, 48),
+            marker_target(&candidate.target, &candidate.title, 120),
+            marker_text(&candidate.title, 180),
             candidate.evidence_count,
             candidate.source_confirmed
         ));
@@ -529,12 +601,153 @@ fn compact_s1_lane_ledger(state: &RunbookState, lane_id: &str, max_surfaces: usi
     lines.join("\n")
 }
 
+fn compact_s2_source_packet(state: &RunbookState, lane_id: &str) -> String {
+    let mut lines = Vec::new();
+    lines.push(format!(
+        "SOURCE_PACKET% lane={} source=stage1-runbook mode=packet_first",
+        lane_id
+    ));
+
+    let mut candidates = state
+        .candidates
+        .iter()
+        .filter(|candidate| {
+            candidate.stage == "stage1"
+                && !matches!(
+                    candidate.status,
+                    CandidateStatus::Rejected
+                        | CandidateStatus::Duplicate
+                        | CandidateStatus::OutOfScope
+                )
+                && (lane_id == quick_hits_lane_id()
+                    || s2_lane_text_matches(
+                        lane_id,
+                        &[&candidate.category, &candidate.target, &candidate.title],
+                    )
+                    || s2_cross_lane_seed_matches(
+                        lane_id,
+                        &[&candidate.category, &candidate.target, &candidate.title],
+                    ))
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by_key(|candidate| {
+        (
+            usize::from(candidate.source_confirmed),
+            candidate.verification_count,
+            candidate.evidence_count,
+        )
+    });
+    candidates.reverse();
+
+    for candidate in candidates {
+        lines.push(format!(
+            "SOURCE_FACT% id={} category={} target={} status={:?} evidence={} verified={} source={} hint={} title={}",
+            marker_text(&candidate.id, 48),
+            marker_token(&candidate.category, 48),
+            marker_target(&candidate.target, &candidate.title, 120),
+            candidate.status,
+            candidate.evidence_count,
+            candidate.verification_count,
+            candidate.source_confirmed,
+            source_read_hint(&marker_target(&candidate.target, &candidate.title, 120)),
+            marker_text(&candidate.title, 220)
+        ));
+    }
+
+    let mut source_surfaces = state
+        .surfaces
+        .iter()
+        .filter(|surface| {
+            s1_read_target_matches_lane(
+                lane_id,
+                &surface.kind,
+                &surface.category,
+                &surface.label,
+                &surface.target,
+            ) || lane_id == quick_hits_lane_id()
+                || s2_lane_text_matches(
+                    lane_id,
+                    &[&surface.category, &surface.kind, &surface.label, &surface.target],
+                )
+        })
+        .collect::<Vec<_>>();
+    source_surfaces.sort_by_key(|surface| usize::from(surface.kind != "read_target"));
+    let mut surface_count = 0;
+    for surface in source_surfaces {
+        if surface.kind == "read_target" {
+            lines.push(format!(
+                "READ_TARGET% category={} target={} label={}",
+                marker_token(&surface.category, 48),
+                marker_target(&surface.target, &surface.label, 160),
+                marker_text(&surface.label, 320)
+            ));
+        } else {
+            lines.push(format!(
+                "SOURCE_ROUTE% kind={} category={} target={} label={}",
+                marker_token(&surface.kind, 48),
+                marker_token(&surface.category, 48),
+                marker_target(&surface.target, &surface.label, 120),
+                marker_text(&surface.label, 120)
+            ));
+        }
+        surface_count += 1;
+    }
+
+    if lines.len() == 1 {
+        lines.push("SOURCE_PACKET_EMPTY% reason=no-stage1-lane-facts".to_string());
+    } else {
+        lines.push(format!(
+            "SOURCE_PACKET_SUMMARY% facts={} routes={}",
+            lines
+                .iter()
+                .filter(|line| line.starts_with("SOURCE_FACT%"))
+                .count(),
+            surface_count
+        ));
+    }
+    lines.join("\n")
+}
+
+fn source_read_hint(target: &str) -> String {
+    let hint = target
+        .split_whitespace()
+        .find(|part| part.contains(':') || part.contains('/'))
+        .unwrap_or(target);
+    format!("line_window:{}", marker_text(hint, 96))
+}
+
+fn marker_text(text: &str, max_chars: usize) -> String {
+    let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    truncate_chars(&normalized, max_chars).replace('\n', " ")
+}
+
+fn marker_token(text: &str, max_chars: usize) -> String {
+    marker_text(text, max_chars)
+        .split_whitespace()
+        .next()
+        .unwrap_or("unknown")
+        .to_string()
+}
+
+fn marker_target(target: &str, fallback: &str, max_chars: usize) -> String {
+    let clean = marker_text(target, max_chars);
+    if !clean.is_empty() && clean != "unmapped-feature" {
+        return clean;
+    }
+    fallback
+        .split_whitespace()
+        .find(|part| part.contains(':') || part.contains('/'))
+        .map(|part| marker_text(part, max_chars))
+        .filter(|part| !part.is_empty())
+        .unwrap_or_else(|| "unmapped-feature".to_string())
+}
+
 fn compact_claim_packet(state: &RunbookState, max_items: usize) -> String {
     let mut lines = Vec::new();
     lines.push(format!(
         "MERGE_PACKET% lanes={}/{} surfaces={} candidates={} claims={} findings={} publishable={} probed={} rejected={} needs_verify={}",
         state.s2_completed_lane_count(),
-        s2_lane_ids().len(),
+        s2_core_lane_ids().len(),
         state.surfaces.len(),
         state.candidates.len(),
         state.claims.len(),
@@ -544,25 +757,21 @@ fn compact_claim_packet(state: &RunbookState, max_items: usize) -> String {
         state.stats.rejected,
         state.stats.needs_verify,
     ));
-    for lane in &state.lanes {
-        lines.push(format!(
-            "LANE_REPORT% lane={} status={} claims={} thread_id={} note={}",
-            lane.lane_id, lane.status, lane.claim_count, lane.thread_id, lane.summary
-        ));
-    }
     for claim in state.claims.iter().take(max_items) {
         lines.push(format!(
-            "CLAIM% id={} category={} target={} status={} level={} severity={} title={} root_cause={} impact={} payload={}",
-            claim.id,
-            claim.category,
-            claim.target,
+            "CLAIM% id={} category={} target={} status={} level={} severity={} title={} root_cause={} reason={} impact={} payload={} next={}",
+            marker_text(&claim.id, 48),
+            marker_token(&claim.category, 48),
+            marker_target(&claim.target, &claim.title, 120),
             claim.status.as_marker(),
             claim.evidence_level.as_marker(),
             claim.severity.as_deref().unwrap_or("unknown"),
-            claim.title,
-            claim.root_cause,
-            claim.impact,
-            claim.payload
+            marker_text(&claim.title, 160),
+            marker_text(&claim.root_cause, 180),
+            marker_text(&claim.positive_evidence, 180),
+            marker_text(&claim.impact, 160),
+            marker_text(&claim.payload, 120),
+            marker_text(&claim.precondition, 120)
         ));
     }
     if state.claims.len() > max_items {
@@ -574,21 +783,25 @@ fn compact_claim_packet(state: &RunbookState, max_items: usize) -> String {
     for candidate in state.candidates.iter().take(max_items / 2) {
         lines.push(format!(
             "CANDIDATE% id={} category={} target={} status={:?} title={}",
-            candidate.id, candidate.category, candidate.target, candidate.status, candidate.title
+            marker_text(&candidate.id, 48),
+            marker_token(&candidate.category, 48),
+            marker_target(&candidate.target, &candidate.title, 120),
+            candidate.status,
+            marker_text(&candidate.title, 160)
         ));
     }
     for atom in state.attack_atoms.iter().take(max_items / 2) {
         lines.push(format!(
             "ATTACK_ATOM% id={} lane={} kind={} category={} target={} label={} bridge_keys={} claim={} confidence={}",
-            atom.id,
-            atom.lane_id,
-            atom.kind,
-            atom.category,
-            atom.target,
-            atom.label,
-            atom.bridge_keys.join(","),
-            atom.claim_id.as_deref().unwrap_or(""),
-            atom.confidence
+            marker_text(&atom.id, 48),
+            marker_token(&atom.lane_id, 48),
+            marker_token(&atom.kind, 48),
+            marker_token(&atom.category, 48),
+            marker_target(&atom.target, &atom.label, 120),
+            marker_text(&atom.label, 120),
+            marker_text(&atom.bridge_keys.join(","), 120),
+            marker_text(atom.claim_id.as_deref().unwrap_or(""), 48),
+            marker_text(&atom.confidence, 32)
         ));
     }
     for chain in state.chain_candidates.iter().take(max_items / 4) {

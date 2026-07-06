@@ -68,6 +68,14 @@ const RUNBOOK_MARKER_FLUSH_BATCH_LINES: usize = 12;
 const RUNBOOK_MARKER_FLUSH_INTERVAL: Duration = Duration::from_millis(350);
 const WORKFLOW_LANE_MAX_ATTEMPTS: u8 = 3;
 const WORKFLOW_LANE_RETRY_TICK: Duration = Duration::from_secs(1);
+const DEFAULT_WORKFLOW_LANE_IDLE_TIMEOUT: Duration = Duration::from_secs(600);
+
+#[derive(Clone)]
+struct StartupResumeRequest {
+    run_id: String,
+    stage_id: String,
+    note: String,
+}
 
 include!("main_types.inc.rs");
 include!("main_status.inc.rs");
@@ -99,6 +107,7 @@ fn main() {
         .init();
 
     info!("TriLane starting...");
+    let startup_resume = startup_resume_request();
     let state_store = tauri::async_runtime::block_on(TriLaneStateStore::open_default())
         .expect("failed to open TriLane SQLite state store");
     let initial_runbook = tauri::async_runtime::block_on(state_store.load_runbook())
@@ -120,9 +129,42 @@ fn main() {
             state_store,
             transcript_log: Mutex::new(TranscriptArchive::new()),
         })
+        .setup(move |app| {
+            if let Some(request) = startup_resume.clone() {
+                let handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(Duration::from_millis(800)).await;
+                    let state = handle.state::<AppState>();
+                    if let Err(error) =
+                        start_agent(state, handle.clone(), None, None, Some("lab".to_string()))
+                            .await
+                    {
+                        append_and_emit_system_message(
+                            &handle,
+                            format!("SYS% startup resume failed to start agent: {error}"),
+                        )
+                        .await;
+                        return;
+                    }
+                    let text = startup_resume_directive(&request);
+                    let state = handle.state::<AppState>();
+                    if let Err(error) =
+                        send_message(handle.clone(), state, text, Some("lab".to_string())).await
+                    {
+                        append_and_emit_system_message(
+                            &handle,
+                            format!("SYS% startup resume failed: {error}"),
+                        )
+                        .await;
+                    }
+                });
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             start_agent,
             send_message,
+            list_trilane_runs,
             is_agent_started,
             is_turn_in_progress,
             approve_command,
@@ -146,6 +188,38 @@ fn main() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
     drop(arg0_path_entry_guard);
+}
+
+fn startup_resume_request() -> Option<StartupResumeRequest> {
+    let args = std::env::args().collect::<Vec<_>>();
+    let run_id = cli_arg_value(&args, "--trilane-resume-run")?;
+    let stage_id = cli_arg_value(&args, "--trilane-resume-stage")?;
+    let note = cli_arg_value(&args, "--trilane-resume-note").unwrap_or_default();
+    Some(StartupResumeRequest {
+        run_id,
+        stage_id,
+        note,
+    })
+}
+
+fn cli_arg_value(args: &[String], flag: &str) -> Option<String> {
+    args.iter()
+        .position(|arg| arg == flag)
+        .and_then(|index| args.get(index + 1))
+        .filter(|value| !value.trim().is_empty())
+        .cloned()
+}
+
+fn startup_resume_directive(request: &StartupResumeRequest) -> String {
+    let mut text = format!(
+        "TRILANE_RESUME_RUN% run={} stage={}",
+        request.run_id, request.stage_id
+    );
+    if !request.note.trim().is_empty() {
+        text.push_str("\n\n");
+        text.push_str(request.note.trim());
+    }
+    text
 }
 
 #[cfg(test)]

@@ -61,7 +61,7 @@ impl RunbookState {
         );
         if let Some(surface) = self.surfaces.iter_mut().find(|surface| surface.id == id) {
             surface.stage = stage.to_string();
-            surface.label = truncate(label, 140);
+            surface.label = truncate(label, surface_label_limit(kind));
             surface.signal_count += 1;
             surface.updated_at = now();
         } else {
@@ -70,7 +70,7 @@ impl RunbookState {
                 stage: stage.to_string(),
                 kind: kind.to_string(),
                 category: category.clone(),
-                label: truncate(label, 140),
+                label: truncate(label, surface_label_limit(kind)),
                 target: truncate(target, 180),
                 signal_count: 1,
                 updated_at: now(),
@@ -194,17 +194,26 @@ impl RunbookState {
             .unwrap_or_else(|| strip_marker(line).to_string());
         let target = marker_value(line, "target")
             .or_else(|| marker_value(line, "surface"))
+            .or_else(|| marker_value(line, "source"))
+            .or_else(|| marker_value(line, "path"))
+            .or_else(|| marker_value(line, "route"))
             .unwrap_or_default();
         let category = marker_value(line, "category").unwrap_or_else(|| infer_category(&title));
         let code_path = marker_value(line, "code_path").unwrap_or_default();
-        let root_cause = marker_value(line, "root_cause").unwrap_or_default();
-        let precondition = marker_value(line, "precondition").unwrap_or_default();
+        let reason = marker_value(line, "reason");
+        let root_cause = marker_value(line, "root_cause")
+            .or_else(|| reason.clone())
+            .unwrap_or_default();
+        let precondition = marker_value(line, "precondition")
+            .or_else(|| marker_value(line, "next"))
+            .unwrap_or_default();
         let impact = marker_value(line, "impact").unwrap_or_default();
         let payload = marker_value(line, "payload")
             .or_else(|| marker_value(line, "exploit"))
             .unwrap_or_default();
         let positive = marker_value(line, "positive")
             .or_else(|| marker_value(line, "evidence"))
+            .or(reason)
             .unwrap_or_else(|| strip_marker(line).to_string());
         let negative = marker_value(line, "negative").unwrap_or_default();
         let status = marker_value(line, "status")
@@ -239,9 +248,14 @@ impl RunbookState {
         let category = marker_value(line, "category").unwrap_or_else(|| infer_category(line));
         let feature = marker_value(line, "feature")
             .or_else(|| marker_value(line, "target"))
+            .or_else(|| marker_value(line, "source"))
+            .or_else(|| marker_value(line, "path"))
+            .or_else(|| marker_value(line, "route"))
             .unwrap_or_else(|| "unmapped-feature".to_string());
         let target = marker_value(line, "target")
             .or_else(|| marker_value(line, "route"))
+            .or_else(|| marker_value(line, "source"))
+            .or_else(|| marker_value(line, "path"))
             .unwrap_or_else(|| feature.clone());
         let must = marker_value(line, "must")
             .or_else(|| marker_value(line, "check"))
@@ -272,15 +286,20 @@ impl RunbookState {
         let evidence_level = marker_value(line, "level")
             .map(|value| EvidenceLevel::from_marker(&value))
             .unwrap_or(EvidenceLevel::Signal);
-        let candidate_id =
-            self.upsert_candidate_with_id(stage, marker_value(line, "id"), &category, &title, target);
+        let candidate_id = self.upsert_candidate_with_id(
+            stage,
+            marker_value(line, "id"),
+            &category,
+            &title,
+            target.clone(),
+        );
         let positive = format!("feature={feature}; must={must}; evidence={evidence}");
         self.upsert_claim(ClaimSeed {
             id: Some(candidate_id.clone()),
             stage,
             category: &category,
             title: &title,
-            target: &feature,
+            target: &target,
             code_path: &code_path,
             root_cause: &root_cause,
             precondition: &precondition,

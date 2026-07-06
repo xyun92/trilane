@@ -131,7 +131,30 @@ fn is_visual_runbook_delta_marker(line: &str) -> bool {
         .trim_matches('"')
         .trim()
         .to_ascii_lowercase();
-    ["feature%", "surface%", "coverage%"]
+    [
+        "feature%",
+        "subagent%",
+        "surface%",
+        "coverage%",
+        "read_target%",
+        "obligation%",
+        "candidate%",
+        "claim%",
+        "probe%",
+        "control%",
+        "verify%",
+        "s2_defer_probe%",
+        "rejected%",
+        "duplicate%",
+        "merge%",
+        "adjudicate%",
+        "finding%",
+        "attack_atom%",
+        "atom%",
+        "chain_candidate%",
+        "chain_hint%",
+        "chain_verify%",
+    ]
         .iter()
         .any(|prefix| trimmed.starts_with(prefix))
 }

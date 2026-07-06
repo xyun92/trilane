@@ -14,6 +14,8 @@ mod tests {
     use super::WorkflowAction;
     use super::WorkflowCounters;
     use crate::runbook::AuditMode;
+    use crate::runbook::CandidateStatus;
+    use crate::runbook::RunbookCandidate;
     use crate::runbook::RunbookState;
 
     include!("workflow_tests.inc.rs");

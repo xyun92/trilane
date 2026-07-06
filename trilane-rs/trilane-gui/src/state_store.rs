@@ -46,6 +46,16 @@ impl TriLaneStateStore {
     }
 
     pub(crate) async fn save_runbook(&self, state: &RunbookState) -> Result<bool> {
+        self.write_runbook(state, /*guard_revision*/ true).await
+    }
+
+    pub(crate) async fn replace_runbook(&self, state: &RunbookState) -> Result<()> {
+        self.write_runbook(state, /*guard_revision*/ false)
+            .await
+            .map(|_| ())
+    }
+
+    async fn write_runbook(&self, state: &RunbookState, guard_revision: bool) -> Result<bool> {
         let state_json = serde_json::to_string(state).context("serialize runbook state")?;
         let snapshot_key = state.turn_id.as_deref().unwrap_or("active");
         let revision = i64::try_from(state.revision).unwrap_or(i64::MAX);
@@ -54,7 +64,7 @@ impl TriLaneStateStore {
             .begin()
             .await
             .context("begin runbook snapshot tx")?;
-        let result = sqlx::query(
+        let query = if guard_revision {
             "INSERT INTO runbook_snapshot (id, snapshot_key, revision, updated_at, turn_id, state_json)
              VALUES (1, ?1, ?2, ?3, ?4, ?5)
              ON CONFLICT(id) DO UPDATE SET
@@ -63,16 +73,26 @@ impl TriLaneStateStore {
                 updated_at = excluded.updated_at,
                 turn_id = excluded.turn_id,
                 state_json = excluded.state_json
-             WHERE excluded.revision >= runbook_snapshot.revision",
-        )
-        .bind(snapshot_key)
-        .bind(revision)
-        .bind(&state.last_updated)
-        .bind(state.turn_id.as_deref())
-        .bind(state_json)
-        .execute(&mut *tx)
-        .await
-        .context("upsert runbook snapshot")?;
+             WHERE excluded.revision >= runbook_snapshot.revision"
+        } else {
+            "INSERT INTO runbook_snapshot (id, snapshot_key, revision, updated_at, turn_id, state_json)
+             VALUES (1, ?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(id) DO UPDATE SET
+                snapshot_key = excluded.snapshot_key,
+                revision = excluded.revision,
+                updated_at = excluded.updated_at,
+                turn_id = excluded.turn_id,
+                state_json = excluded.state_json"
+        };
+        let result = sqlx::query(query)
+            .bind(snapshot_key)
+            .bind(revision)
+            .bind(&state.last_updated)
+            .bind(state.turn_id.as_deref())
+            .bind(state_json)
+            .execute(&mut *tx)
+            .await
+            .context("upsert runbook snapshot")?;
 
         if result.rows_affected() == 0 {
             tx.commit().await.context("commit skipped runbook tx")?;
@@ -234,6 +254,42 @@ mod tests {
             .expect("load runbook")
             .expect("snapshot");
         assert_eq!(loaded.objective, "newer");
+        let _ = tokio::fs::remove_file(path).await;
+    }
+
+    #[tokio::test]
+    async fn replace_runbook_allows_resume_snapshot_to_rewind_revision() {
+        let path = std::env::temp_dir().join(format!(
+            "trilane-state-resume-{}-{}.sqlite",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        let store = TriLaneStateStore::open(path.as_path())
+            .await
+            .expect("open store");
+        let mut stage5 = RunbookState::default();
+        stage5.start_turn("stage5", AuditMode::Lab);
+        stage5.current_stage = "stage5".to_string();
+        stage5.revision = 100;
+        store.save_runbook(&stage5).await.expect("save stage5");
+
+        let mut stage2 = RunbookState::default();
+        stage2.start_turn("stage2", AuditMode::Lab);
+        stage2.current_stage = "stage2".to_string();
+        stage2.revision = 20;
+        store
+            .replace_runbook(&stage2)
+            .await
+            .expect("replace stage2");
+
+        let loaded = store
+            .load_runbook()
+            .await
+            .expect("load runbook")
+            .expect("snapshot");
+        assert_eq!(loaded.objective, "stage2");
+        assert_eq!(loaded.current_stage, "stage2");
+        assert_eq!(loaded.revision, 20);
         let _ = tokio::fs::remove_file(path).await;
     }
 }

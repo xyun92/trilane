@@ -332,6 +332,49 @@
   color: var(--bg-primary);
 }
 
+.resume-control {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.resume-control select {
+  width: 100%;
+  min-height: 32px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 11px;
+}
+
+.resume-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.resume-actions button {
+  border: 1px solid var(--border-light);
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: 4px;
+  padding: 7px 6px;
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.resume-actions button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .audit-mode-picker {
   display: grid;
   grid-template-columns: 1fr;

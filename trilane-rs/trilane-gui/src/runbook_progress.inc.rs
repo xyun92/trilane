@@ -2,7 +2,7 @@ pub fn scan_progress_from_runbook(state: &RunbookState) -> Option<crate::ScanPro
     if state.status == RunbookStatus::Idle {
         return None;
     }
-    let idx = stage_index(&state.current_stage).unwrap_or(0);
+    let idx = visible_stage_index(state);
     let stage = state.stages.get(idx)?;
     let progress = if state.status == RunbookStatus::Completed {
         1.0
@@ -18,6 +18,31 @@ pub fn scan_progress_from_runbook(state: &RunbookState) -> Option<crate::ScanPro
         message: stage.summary.clone(),
         findings_count: state.stats.confirmed,
     })
+}
+
+fn visible_stage_index(state: &RunbookState) -> usize {
+    if state.status == RunbookStatus::Completed {
+        return state
+            .stages
+            .iter()
+            .rposition(|stage| stage.status == StageStatus::Done)
+            .unwrap_or_else(|| state.stages.len().saturating_sub(1));
+    }
+    if let Some(index) = state
+        .stages
+        .iter()
+        .position(|stage| stage.status == StageStatus::Blocked)
+    {
+        return index;
+    }
+    if let Some(index) = state
+        .stages
+        .iter()
+        .position(|stage| stage.status == StageStatus::Active)
+    {
+        return index;
+    }
+    stage_index(&state.current_stage).unwrap_or(0)
 }
 
 fn default_stages() -> Vec<RunbookStage> {
@@ -362,5 +387,14 @@ fn normalize_marker_line(line: &str) -> String {
         .or_else(|| without_quote.strip_prefix("* "))
         .unwrap_or(without_quote)
         .trim();
-    without_bullet.trim_matches('`').trim().to_string()
+    let mut normalized = without_bullet.trim_matches('`').trim();
+    for wrapper in ["**", "__"] {
+        if let Some(inner) = normalized
+            .strip_prefix(wrapper)
+            .and_then(|value| value.strip_suffix(wrapper))
+        {
+            normalized = inner.trim();
+        }
+    }
+    normalized.to_string()
 }

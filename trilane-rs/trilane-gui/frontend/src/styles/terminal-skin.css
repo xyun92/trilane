@@ -452,6 +452,10 @@ select {
   color: var(--cyan);
 }
 
+.ascii-pipeline span.blocked {
+  color: var(--high);
+}
+
 .stage-pipeline {
   gap: 8px;
 }
@@ -469,6 +473,10 @@ select {
 
 .stage-node.done {
   border-color: var(--cyan);
+}
+
+.stage-node.blocked {
+  border-color: var(--high);
 }
 
 .stage-number,
@@ -621,4 +629,3 @@ select {
   background: #32302f;
   box-shadow: 2px 2px 0 #000;
 }
-

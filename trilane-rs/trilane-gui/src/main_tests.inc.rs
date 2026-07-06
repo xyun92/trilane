@@ -16,57 +16,45 @@
     }
 
     #[test]
-    fn s2_core_lanes_require_lane_report_but_quick_hits_does_not() {
-        assert!(requires_workflow_lane_report(
-            "s2_parallel_semantic_audit",
-            "identity_engine"
+    fn streaming_delta_parser_keeps_s2_lane_markers() {
+        assert!(is_visual_runbook_delta_marker(
+            "CLAIM% id=ID-CAND-01 category=auth target=routes/login.ts"
         ));
-        assert!(requires_workflow_lane_report(
-            "s2_parallel_semantic_audit",
-            "config_engine"
+        assert!(is_visual_runbook_delta_marker(
+            "SUBAGENT% lane=identity_engine status=done claims=1 candidates=1"
         ));
-        assert!(!requires_workflow_lane_report(
-            "s2_parallel_semantic_audit",
-            "quick_hits_engine"
+        assert!(is_visual_runbook_delta_marker(
+            "`DUPLICATE% id=QH-DUP-01 merge_into=CONFIG-CAND-01`"
         ));
-        assert!(!requires_workflow_lane_report(
-            "s5_adversarial_review",
-            "final_report_review"
+        assert!(!is_visual_runbook_delta_marker(
+            "This is ordinary reasoning prose without a marker."
         ));
     }
 
     #[test]
-    fn missing_lane_report_repair_prompt_is_idempotent_and_lane_scoped() {
-        let prompt = missing_lane_report_repair_prompt("original prompt", "identity_engine");
+    fn lane_batch_tracks_idle_running_lanes() {
+        let batch = WorkflowLaneBatch {
+            phase_id: "s2_parallel_semantic_audit".to_string(),
+            stage_id: "stage2".to_string(),
+            title: "S2 concurrent audit".to_string(),
+            lanes: vec![test_lane("identity_engine"), test_lane("config_engine")],
+            is_repair: false,
+        };
+        let mut active = ActiveLaneBatch::new(&batch, /*max_concurrency*/ 2);
+        active.lanes[0].mark_starting();
+        active.lanes[0].thread_id = "thread-a".to_string();
+        active.lanes[0].turn_id = Some("turn-a".to_string());
+        active.lanes[0].last_activity_at = Some(Instant::now() - Duration::from_secs(700));
+        active.lanes[1].mark_starting();
+        active.lanes[1].thread_id = "thread-b".to_string();
+        active.lanes[1].turn_id = Some("turn-b".to_string());
+        active.mark_activity("thread-b", "turn-b");
 
-        assert!(prompt.contains("WORKFLOW_LANE_REPAIR% missing_lane_report lane=identity_engine"));
-        assert!(prompt.contains("Do not act as the root agent"));
-        assert!(prompt.contains("LANE_REPORT% lane=identity_engine status=done"));
-        assert!(prompt.contains("ORIGINAL_LANE_PROMPT%"));
         assert_eq!(
-            missing_lane_report_repair_prompt(&prompt, "identity_engine"),
-            prompt
+            active.idle_running_lane_indices(Instant::now(), Duration::from_secs(600)),
+            vec![0]
         );
-    }
-
-    #[test]
-    fn synthesized_missing_lane_report_marker_closes_core_lane() {
-        let marker = synthesized_missing_lane_report_marker("injection_engine");
-        let mut state = RunbookState::default();
-
-        state.record_workflow_phase("stage2", "S2 concurrent 6-lane semantic audit");
-        state.record_agent_message(&marker);
-
-        let lane = state
-            .lanes
-            .iter()
-            .find(|lane| lane.lane_id == "injection_engine")
-            .expect("injection lane should be recorded");
-        assert!(marker.contains("LANE_REPORT% lane=injection_engine status=done claims=0 candidates=0"));
-        assert_eq!(lane.status, "done");
-        assert!(lane.report_seen);
-        assert_eq!(lane.claim_count, 0);
-        assert_eq!(lane.candidate_count, 0);
+        assert_eq!(active.lane_index_by_event("wrong-thread", "turn-b"), Some(1));
     }
 
     #[test]

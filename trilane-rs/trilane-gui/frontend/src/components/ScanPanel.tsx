@@ -219,7 +219,7 @@ interface Props {
 const FALLBACK_STAGES: RunbookStage[] = [
   { id: "stage0", code: "S0", name: "Gate", label: "", status: "pending", summary: "waiting for agent objective", evidence_count: 0, candidate_count: 0, findings_count: 0, updated_at: "" },
   { id: "stage1", code: "S1", name: "Recon", label: "", status: "pending", summary: "waiting for source/sink map", evidence_count: 0, candidate_count: 0, findings_count: 0, updated_at: "" },
-  { id: "stage2", code: "S2", name: "Audit", label: "", status: "pending", summary: "waiting for exploitability evidence", evidence_count: 0, candidate_count: 0, findings_count: 0, updated_at: "" },
+  { id: "stage2", code: "S2", name: "Candidates", label: "", status: "pending", summary: "waiting for claim candidates", evidence_count: 0, candidate_count: 0, findings_count: 0, updated_at: "" },
   { id: "stage3", code: "S3", name: "FoA", label: "", status: "pending", summary: "waiting for summary", evidence_count: 0, candidate_count: 0, findings_count: 0, updated_at: "" },
   { id: "stage4", code: "S4", name: "Fuzz", label: "", status: "pending", summary: "future fuzzy lane", evidence_count: 0, candidate_count: 0, findings_count: 0, updated_at: "" },
   { id: "stage5", code: "S5", name: "Verify", label: "", status: "pending", summary: "future isolation lane", evidence_count: 0, candidate_count: 0, findings_count: 0, updated_at: "" },
@@ -278,7 +278,6 @@ const TRILANE_COVERAGE: RunbookCoverage[] = [
 
 export default function ScanPanel({ runbook, progress, auditMode }: Props) {
   const stages = runbook?.stages ?? FALLBACK_STAGES;
-  const currentStageIdx = stages.findIndex((stage) => stage.id === (runbook?.current_stage ?? ""));
   const latestEvidence = runbook?.evidence.slice(-8).reverse() ?? [];
   const latestFindings = runbook?.findings.slice(-6).reverse() ?? [];
   const latestCandidates = runbook?.candidates.slice(-8).reverse() ?? [];
@@ -355,14 +354,14 @@ export default function ScanPanel({ runbook, progress, auditMode }: Props) {
       </div>
 
       <div className="scan-note">
-        SCAN is now a surface-driven ASG/ASM ledger. Inventory surfaces, derive domain queues, close debt, then publish adjudicated findings.
+        SCAN is now a surface-driven ASG/ASM ledger. Inventory surfaces, derive claim candidates, verify targeted gaps, then publish adjudicated findings.
       </div>
 
       <div className="ascii-pipeline">
-        {stages.map((stage, idx) => (
+        {stages.map((stage) => (
           <span
             key={stage.id}
-            className={`${stage.status === "active" ? "active" : ""} ${stage.status === "done" || idx < currentStageIdx ? "done" : ""}`}
+            className={stage.status}
           >
             [{stage.code}:{stage.name.toUpperCase()}]
           </span>
@@ -373,7 +372,7 @@ export default function ScanPanel({ runbook, progress, auditMode }: Props) {
         {stages.map((stage) => (
           <div
             key={stage.id}
-            className={`stage-node ${stage.status === "active" ? "active" : ""} ${stage.status === "done" ? "done" : ""}`}
+            className={`stage-node ${stage.status}`}
           >
             <div className="stage-number">{stage.code}</div>
             <div className="stage-name">{stage.name}</div>
@@ -383,7 +382,7 @@ export default function ScanPanel({ runbook, progress, auditMode }: Props) {
               <span>{stage.candidate_count} cand</span>
               <span>{stage.findings_count} conf</span>
             </div>
-            {stage.status === "active" && progress && (
+            {stage.status === "active" && progress?.stage === stage.id && (
               <div className="stage-progress-bar">
                 <div
                   className="stage-progress-fill"

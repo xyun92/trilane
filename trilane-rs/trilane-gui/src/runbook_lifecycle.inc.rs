@@ -117,6 +117,21 @@ impl RunbookState {
         self.touch();
     }
 
+    pub fn stop_turn(&mut self, reason: &str) {
+        self.status = RunbookStatus::Error;
+        let stage_id = self.current_stage.clone();
+        self.mark_stage_blocked(&stage_id, reason);
+        for lane in self.lanes.iter_mut().filter(|lane| {
+            lane.stage == stage_id && matches!(lane.status.as_str(), "queued" | "running" | "retrying")
+        }) {
+            lane.status = "failed".to_string();
+            lane.summary = reason.to_string();
+            lane.updated_at = now();
+        }
+        self.record_evidence(&stage_id, "stop", "Agent stopped", truncate(reason, 500));
+        self.touch();
+    }
+
     pub fn record_workflow_phase(&mut self, stage_id: &str, summary: &str) {
         self.activate_stage(stage_id, summary);
         self.record_evidence(
@@ -132,7 +147,6 @@ impl RunbookState {
             stage,
             lane_id,
             status,
-            report_seen,
             claim_count,
             candidate_count,
             thread_id,
@@ -150,7 +164,6 @@ impl RunbookState {
                 lane_id: lane_id.to_string(),
                 stage: stage.to_string(),
                 status: "spawned".to_string(),
-                report_seen: false,
                 claim_count: 0,
                 candidate_count: 0,
                 thread_id: String::new(),
@@ -159,9 +172,6 @@ impl RunbookState {
         });
         lane.stage = stage.to_string();
         lane.status = normalized_status.to_string();
-        if report_seen {
-            lane.report_seen = true;
-        }
         if let Some(count) = claim_count {
             lane.claim_count = count;
         }
@@ -202,6 +212,12 @@ impl RunbookState {
         self.s2_missing_lanes().is_empty()
     }
 
+    pub fn s2_quick_hits_finished(&self) -> bool {
+        self.lanes.iter().any(|lane| {
+            lane.lane_id == "quick_hits_engine" && matches!(lane.status.as_str(), "done" | "failed")
+        })
+    }
+
     pub fn s2_missing_lanes(&self) -> Vec<String> {
         required_s2_lanes()
             .iter()
@@ -209,7 +225,7 @@ impl RunbookState {
                 !self
                     .lanes
                     .iter()
-                    .any(|lane| lane.lane_id == **lane_id && s2_lane_report_complete(lane))
+                    .any(|lane| lane.lane_id == **lane_id && s2_lane_complete(lane))
             })
             .map(|lane_id| (*lane_id).to_string())
             .collect()
@@ -221,7 +237,7 @@ impl RunbookState {
             .filter(|lane_id| {
                 self.lanes
                     .iter()
-                    .any(|lane| lane.lane_id == **lane_id && s2_lane_report_complete(lane))
+                    .any(|lane| lane.lane_id == **lane_id && s2_lane_complete(lane))
             })
             .count()
     }

@@ -134,6 +134,7 @@ struct ActiveLane {
     status: ActiveLaneStatus,
     attempts: u8,
     retry_ready_at: Option<Instant>,
+    last_activity_at: Option<Instant>,
     last_error: Option<String>,
 }
 
@@ -170,6 +171,7 @@ impl ActiveLaneBatch {
             .iter_mut()
             .find(|lane| lane.thread_id == thread_id && lane.status == ActiveLaneStatus::Running)?;
         lane.turn_id = Some(turn_id);
+        lane.last_activity_at = Some(Instant::now());
         Some(lane.lane_id.clone())
     }
 
@@ -177,6 +179,39 @@ impl ActiveLaneBatch {
         self.lanes.iter().position(|lane| {
             lane.thread_id == thread_id && lane.status == ActiveLaneStatus::Running
         })
+    }
+
+    fn lane_index_by_event(&self, thread_id: &str, turn_id: &str) -> Option<usize> {
+        if !turn_id.is_empty() {
+            if let Some(index) = self.lanes.iter().position(|lane| {
+                lane.turn_id.as_deref() == Some(turn_id)
+                    && lane.status == ActiveLaneStatus::Running
+            }) {
+                return Some(index);
+            }
+        }
+        self.lane_index_by_thread(thread_id)
+    }
+
+    fn mark_activity(&mut self, thread_id: &str, turn_id: &str) -> Option<String> {
+        let index = self.lane_index_by_event(thread_id, turn_id)?;
+        let lane = self.lanes.get_mut(index)?;
+        lane.last_activity_at = Some(Instant::now());
+        Some(lane.lane_id.clone())
+    }
+
+    fn idle_running_lane_indices(&self, now: Instant, timeout: Duration) -> Vec<usize> {
+        self.lanes
+            .iter()
+            .enumerate()
+            .filter_map(|(index, lane)| {
+                (lane.status == ActiveLaneStatus::Running
+                    && lane
+                        .last_activity_at
+                        .is_some_and(|last| now.duration_since(last) >= timeout))
+                .then_some(index)
+            })
+            .collect()
     }
 
     fn finish_lane(&mut self, index: usize, failed: bool) {
@@ -187,6 +222,7 @@ impl ActiveLaneBatch {
                 ActiveLaneStatus::Done
             };
             lane.retry_ready_at = None;
+            lane.last_activity_at = None;
         }
     }
 
@@ -197,6 +233,7 @@ impl ActiveLaneBatch {
         lane.thread_id.clear();
         lane.turn_id = None;
         lane.retry_ready_at = Some(Instant::now() + delay);
+        lane.last_activity_at = None;
         lane.last_error = Some(error.to_string());
         delay
     }
@@ -242,6 +279,7 @@ impl ActiveLane {
             status: ActiveLaneStatus::Queued,
             attempts: 0,
             retry_ready_at: None,
+            last_activity_at: None,
             last_error: None,
         }
     }
@@ -252,6 +290,7 @@ impl ActiveLane {
         self.thread_id.clear();
         self.turn_id = None;
         self.retry_ready_at = None;
+        self.last_activity_at = Some(Instant::now());
         self.last_error = None;
     }
 }

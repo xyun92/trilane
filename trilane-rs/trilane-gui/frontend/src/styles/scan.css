@@ -134,6 +134,10 @@
   opacity: 0.7;
 }
 
+.stage-node.blocked {
+  border-color: var(--high);
+}
+
 .stage-number {
   font-size: 11px;
   font-weight: 700;
@@ -146,6 +150,10 @@
 
 .stage-node.done .stage-number {
   color: var(--accent-dim);
+}
+
+.stage-node.blocked .stage-number {
+  color: var(--high);
 }
 
 .stage-name {

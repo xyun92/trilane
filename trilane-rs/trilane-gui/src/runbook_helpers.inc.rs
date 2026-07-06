@@ -8,8 +8,8 @@ fn required_s2_lanes() -> [&'static str; 5] {
     ]
 }
 
-fn s2_lane_report_complete(lane: &RunbookLane) -> bool {
-    lane.status == "done" && lane.report_seen
+fn s2_lane_complete(lane: &RunbookLane) -> bool {
+    lane.status == "done"
 }
 
 fn normalize_lane_status(status: &str) -> &'static str {
@@ -20,6 +20,14 @@ fn normalize_lane_status(status: &str) -> &'static str {
         "retrying" | "backoff" | "rate_limited" | "rate-limited" => "retrying",
         "running" | "started" | "spawned" | "in_progress" | "in-progress" => "running",
         _ => "running",
+    }
+}
+
+fn surface_label_limit(kind: &str) -> usize {
+    if kind == "read_target" {
+        240
+    } else {
+        140
     }
 }
 
@@ -34,10 +42,28 @@ fn marker_value(line: &str, key: &str) -> Option<String> {
         " area=",
         " feature=",
         " family=",
+        " debt=",
+        " source=",
+        " sink=",
+        " guard=",
+        " file=",
         " endpoints=",
+        " route=",
         " source_files=",
         " files=",
         " routes=",
+        " path=",
+        " read=",
+        " endpoint=",
+        " lines=",
+        " anchor=",
+        " follow=",
+        " question=",
+        " stop_when=",
+        " broaden_after=",
+        " object_id=",
+        " auth_hint=",
+        " ownership_hint=",
         " target=",
         " title=",
         " status=",

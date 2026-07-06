@@ -77,7 +77,7 @@
     }
 
     #[test]
-    fn subagent_lane_markers_do_not_drive_s2_completion() {
+    fn subagent_lane_markers_drive_s2_completion() {
         let mut state = RunbookState::default();
         state.start_turn("test target", AuditMode::Lab);
         state.record_workflow_phase("stage2", "S2 concurrent audit");
@@ -90,39 +90,58 @@
              SUBAGENT% lane=config_engine status=done claims=2 candidates=3 thread_id=t5",
         );
 
-        assert!(!state.s2_required_lanes_complete());
-        assert_eq!(state.s2_completed_lane_count(), 0);
-        assert_eq!(
-            state.s2_missing_lanes(),
-            vec![
-                "identity_engine",
-                "injection_engine",
-                "ingress_engine",
-                "logic_engine",
-                "config_engine"
-            ]
-        );
+        assert!(state.s2_required_lanes_complete());
+        assert_eq!(state.s2_completed_lane_count(), 5);
+        assert_eq!(state.s2_missing_lanes(), Vec::<String>::new());
         assert_eq!(state.lanes.len(), 5);
     }
 
     #[test]
-    fn lane_report_markers_drive_s2_completion() {
+    fn normalized_subagent_markers_drive_s2_completion() {
         let mut state = RunbookState::default();
         state.start_turn("test target", AuditMode::Lab);
         state.record_workflow_phase("stage2", "S2 concurrent audit");
 
         state.record_agent_message(
-            "LANE_REPORT% lane=identity_engine status=done claims=4 candidates=5 note=identity complete\n\
-             LANE_REPORT% lane=injection_engine status=done claims=6 candidates=8 note=injection complete\n\
-             LANE_REPORT% lane=ingress_engine status=done claims=3 candidates=4 note=file lanes complete\n\
-             LANE_REPORT% lane=logic_engine status=done claims=5 candidates=6 note=logic lanes complete\n\
-             LANE_REPORT% lane=config_engine status=done claims=2 candidates=3 note=config lanes complete",
+            "SUBAGENT% lane=identity_engine status=done claims=4 candidates=5 note=identity complete\n\
+             SUBAGENT% lane=injection_engine status=done claims=6 candidates=8 note=injection complete\n\
+             **SUBAGENT% lane=ingress_engine status=done claims=3 candidates=4 note=file lanes complete**\n\
+             SUBAGENT% lane=logic_engine status=done claims=5 candidates=6 note=logic lanes complete\n\
+             SUBAGENT% lane=config_engine status=done claims=2 candidates=3 note=config lanes complete",
         );
 
         assert!(state.s2_required_lanes_complete());
         assert_eq!(state.s2_completed_lane_count(), 5);
         assert_eq!(state.s2_missing_lanes(), Vec::<String>::new());
         assert_eq!(state.lanes.len(), 5);
+    }
+
+    #[test]
+    fn s1_obligation_fields_do_not_pollute_category_or_target() {
+        let mut state = RunbookState::default();
+        state.start_turn("test target", AuditMode::Lab);
+        state.record_workflow_phase("stage1", "S1 source map");
+
+        state.record_agent_message(
+            "OBLIGATION% id=CAND-38 category=authz debt=BasketItems-IDOR source=server.ts:425 sink=appendUserId must=prove-owner-check reason=object-id-write",
+        );
+
+        let candidate = state
+            .candidates
+            .iter()
+            .find(|candidate| candidate.id == "CAND-38")
+            .expect("candidate");
+        assert_eq!(candidate.category, "authz");
+        assert_eq!(candidate.target, "server.ts:425");
+        assert!(candidate.title.contains("prove-owner-check"));
+
+        let claim = state
+            .claims
+            .iter()
+            .find(|claim| claim.id == "CAND-38")
+            .expect("claim");
+        assert_eq!(claim.category, "authz");
+        assert_eq!(claim.target, "server.ts:425");
     }
 
     #[test]
@@ -591,6 +610,32 @@
     }
 
     #[test]
+    fn read_target_markers_record_s2_source_assignments() {
+        let mut state = RunbookState::default();
+        state.start_turn("test target", AuditMode::Lab);
+        state.record_agent_message(
+            "RUNBOOK% S1 Recon: route and source read targets\n\
+             **READ_TARGET% (S2 deep-read work orders, max 10)**\n\
+             READ_TARGET% lane=identity_engine priority=high category=authz kind=endpoint-control path=routes/basket.ts lines=1-160 endpoint=/api/BasketItems object_id=body.BasketId auth_hint=middleware ownership_hint=unknown reason=object_id_write_without_obvious_owner_check question=prove_user_bid_controls_body_BasketId stop_when=owner_check_found_or_missing broaden_after=shared_basket_helper follow=middleware/auth.ts,models/Basket.ts",
+        );
+
+        let read_targets = state
+            .surfaces
+            .iter()
+            .filter(|surface| surface.kind == "read_target")
+            .collect::<Vec<_>>();
+        assert_eq!(read_targets.len(), 1);
+        let surface = read_targets[0];
+        assert_eq!(surface.category, "authz");
+        assert_eq!(surface.target, "routes/basket.ts");
+        assert!(surface.label.contains("lane=identity_engine"));
+        assert!(surface.label.contains("ownership_hint=unknown"));
+        assert!(surface.label.contains("question=prove_user_bid_controls_body_BasketId"));
+        assert!(surface.label.contains("stop_when=owner_check_found_or_missing"));
+        assert!(surface.label.contains("broaden_after=shared_basket_helper"));
+    }
+
+    #[test]
     fn trilane_s2_findings_without_s5_are_blocked() {
         let mut state = RunbookState::default();
         state.start_turn("test target", AuditMode::Lab);
@@ -843,4 +888,54 @@
             .expect("xss coverage category");
         assert_eq!(xss.mapped_count, 1);
         assert_eq!(state.stats.coverage_mapped, 1);
+    }
+
+    #[test]
+    fn stop_turn_blocks_current_stage_and_running_lanes() {
+        let mut state = RunbookState::default();
+        state.start_turn("test target", AuditMode::Lab);
+        state.record_workflow_phase("stage2", "S2 audit");
+        state.record_subagent_lane(RunbookLaneUpdate {
+            stage: "stage2",
+            lane_id: "quick_hits_engine",
+            status: "running",
+            claim_count: None,
+            candidate_count: None,
+            thread_id: Some("thread-1"),
+            summary: "lane started",
+        });
+
+        state.stop_turn("stopped by user reboot");
+
+        assert_eq!(state.status, RunbookStatus::Error);
+        assert!(state
+            .stages
+            .iter()
+            .any(|stage| stage.id == "stage2" && stage.status == StageStatus::Blocked));
+        let lane = state
+            .lanes
+            .iter()
+            .find(|lane| lane.lane_id == "quick_hits_engine")
+            .expect("quick hits lane");
+        assert_eq!(lane.status, "failed");
+        assert_eq!(lane.summary, "stopped by user reboot");
+    }
+
+    #[test]
+    fn scan_progress_uses_explicit_stage_status_over_current_stage() {
+        let mut state = RunbookState::default();
+        state.start_turn("test target", AuditMode::Lab);
+        state.current_stage = "stage3".to_string();
+        for stage in &mut state.stages {
+            stage.status = match stage.id.as_str() {
+                "stage0" | "stage1" => StageStatus::Done,
+                "stage2" => StageStatus::Active,
+                _ => StageStatus::Pending,
+            };
+        }
+
+        let progress = scan_progress_from_runbook(&state).expect("scan progress");
+
+        assert_eq!(progress.stage, "stage2");
+        assert_eq!(progress.stage_name, "S2 Audit");
     }

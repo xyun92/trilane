@@ -98,7 +98,7 @@ async fn start_agent(
         client_version: "0.1.0".to_string(),
         experimental_api: true,
         opt_out_notification_methods: Vec::new(),
-        channel_capacity: 1024,
+        channel_capacity: 8192,
     };
 
     let client = InProcessAppServerClient::start(args)
@@ -189,6 +189,68 @@ async fn send_message(
         append_and_emit_system_message(&app, status_message).await;
         return Ok(());
     }
+
+    if let Some(directive) = parse_resume_run_directive(&text) {
+        let directive = directive?;
+        let (mut snapshot, resume_file_context) = {
+            let archive = state.transcript_log.lock().await;
+            (
+                archive.load_resume_state(&directive.run_id, &directive.stage_id)?,
+                archive.resume_file_context(&directive.run_id, &directive.stage_id)?,
+            )
+        };
+        let objective = resume_objective(
+            &snapshot.objective,
+            &directive.extra_instructions,
+            &resume_file_context,
+        );
+        let resume_audit_mode = snapshot.audit_mode.clone();
+        snapshot.status = runbook::RunbookStatus::Running;
+        snapshot.current_stage = directive.stage_id.clone();
+        snapshot.objective = objective.clone();
+        snapshot.turn_id = None;
+        {
+            let mut runbook = state.runbook.lock().await;
+            *runbook = snapshot.clone();
+        }
+        if let Err(error) = state.state_store.replace_runbook(&snapshot).await {
+            warn!("Failed to replace TriLane resume snapshot: {error:#}");
+        }
+        emit_fe(
+            &app,
+            FrontendEvent::RunbookUpdated {
+                state: Box::new(snapshot.clone()),
+            },
+        );
+        state
+            .transcript_log
+            .lock()
+            .await
+            .start_resume_turn(&directive.run_id, &objective, resume_audit_mode.clone())?;
+        append_chat_message(&app, "user", text.clone()).await;
+        append_and_emit_system_message(
+            &app,
+            format!(
+                "SYS% resumed run from files\nRUN% id={} stage={} source=previous-stage-runbook",
+                directive.run_id, directive.stage_id
+            ),
+        )
+        .await;
+        *state.turn_in_progress.lock().await = true;
+        if let Err(err) = tx
+            .send(AgentCommand::SendMessage {
+                text: objective,
+                audit_mode: resume_audit_mode,
+                resume_stage: Some(directive.stage_id),
+            })
+            .await
+        {
+            *state.turn_in_progress.lock().await = false;
+            return Err(format!("Agent channel closed: {err}"));
+        }
+        return Ok(());
+    }
+
     let snapshot = {
         let mut runbook = state.runbook.lock().await;
         runbook.start_turn(&text, audit_mode.clone());
@@ -204,7 +266,11 @@ async fn send_message(
     *state.turn_in_progress.lock().await = true;
 
     if let Err(err) = tx
-        .send(AgentCommand::SendMessage { text, audit_mode })
+        .send(AgentCommand::SendMessage {
+            text,
+            audit_mode,
+            resume_stage: None,
+        })
         .await
     {
         *state.turn_in_progress.lock().await = false;
@@ -212,6 +278,82 @@ async fn send_message(
     }
 
     Ok(())
+}
+
+struct ResumeRunDirective {
+    run_id: String,
+    stage_id: String,
+    extra_instructions: String,
+}
+
+fn parse_resume_run_directive(text: &str) -> Option<Result<ResumeRunDirective, String>> {
+    let (line_index, line) = text
+        .lines()
+        .enumerate()
+        .find(|(_, line)| !line.trim().is_empty())?;
+    let line = line.trim();
+    if !line.starts_with("TRILANE_RESUME_RUN%") {
+        return None;
+    }
+    let run_id = directive_value(line, "run")
+        .or_else(|| directive_value(line, "run_id"))
+        .ok_or_else(|| "TRILANE_RESUME_RUN% missing run=<id>".to_string());
+    let stage_id = directive_value(line, "stage")
+        .ok_or_else(|| "TRILANE_RESUME_RUN% missing stage=<stageN>".to_string())
+        .and_then(|value| normalize_stage_arg(&value));
+    let extra_instructions = text
+        .lines()
+        .skip(line_index + 1)
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string();
+    Some(run_id.and_then(|run_id| {
+        stage_id.map(|stage_id| ResumeRunDirective {
+            run_id,
+            stage_id,
+            extra_instructions,
+        })
+    }))
+}
+
+fn normalize_stage_arg(value: &str) -> Result<String, String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "s0" | "stage0" => Ok("stage0".to_string()),
+        "s1" | "stage1" => Ok("stage1".to_string()),
+        "s2" | "stage2" => Ok("stage2".to_string()),
+        "s3" | "stage3" => Ok("stage3".to_string()),
+        "s4" | "stage4" => Ok("stage4".to_string()),
+        "s5" | "stage5" => Ok("stage5".to_string()),
+        _ => Err(format!("unknown stage: {value}")),
+    }
+}
+
+fn resume_objective(original: &str, extra: &str, file_context: &str) -> String {
+    let mut objective = format!(
+        "ORIGINAL_OBJECTIVE%\n{}\n\n{}\n\nRESUME_RULES%\nResume from the selected stage using the fixed TriLane stage prompt and the previous-stage runbook state. Preserve prior-stage evidence; regenerate the selected stage and later stages only.",
+        original.trim(),
+        file_context.trim()
+    );
+    if !extra.trim().is_empty() {
+        objective.push_str("\n\nUSER_RESUME_INSTRUCTIONS%\n");
+        objective.push_str(extra.trim());
+    }
+    objective
+}
+
+fn directive_value(line: &str, key: &str) -> Option<String> {
+    let prefix = format!("{key}=");
+    line.split_whitespace().find_map(|part| {
+        part.strip_prefix(&prefix)
+            .map(|value| value.trim_matches('"').trim_matches('\'').to_string())
+            .filter(|value| !value.is_empty())
+    })
+}
+
+#[tauri::command]
+async fn list_trilane_runs(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    Ok(state.transcript_log.lock().await.list_runs())
 }
 
 #[tauri::command]
@@ -243,10 +385,35 @@ async fn approve_command(
 }
 
 #[tauri::command]
-async fn stop_agent(state: State<'_, AppState>) -> Result<(), String> {
+async fn stop_agent(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     let tx = state.msg_tx.lock().await.take();
     if let Some(tx) = tx {
         let _ = tx.send(AgentCommand::Shutdown).await;
+    }
+    let snapshot = {
+        let mut runbook = state.runbook.lock().await;
+        if runbook.status == runbook::RunbookStatus::Running {
+            runbook.stop_turn("stopped by user reboot");
+        }
+        runbook.clone()
+    };
+    if snapshot.status == runbook::RunbookStatus::Error {
+        state
+            .state_store
+            .save_runbook(&snapshot)
+            .await
+            .map_err(|error| format!("Failed to save stopped runbook: {error:#}"))?;
+        state
+            .transcript_log
+            .lock()
+            .await
+            .finish_turn("stopped", &snapshot);
+        emit_fe(
+            &app,
+            FrontendEvent::RunbookUpdated {
+                state: Box::new(snapshot),
+            },
+        );
     }
     *state.thread_id.lock().await = None;
     *state.turn_in_progress.lock().await = false;

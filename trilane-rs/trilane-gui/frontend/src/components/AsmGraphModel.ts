@@ -456,8 +456,8 @@ function currentStageIndex(runbook: RunbookState | null) {
   if (runbook.status === "completed") return 5;
   const activeIdx = runbook.stages.findIndex((stage) => stage.status === "active");
   if (activeIdx >= 0) return activeIdx;
-  const currentIdx = runbook.stages.findIndex((stage) => stage.id === runbook.current_stage);
-  if (currentIdx >= 0) return currentIdx;
+  const blockedIdx = runbook.stages.findIndex((stage) => stage.status === "blocked");
+  if (blockedIdx >= 0) return blockedIdx;
   const doneIndexes = runbook.stages
     .map((stage, idx) => (stage.status === "done" ? idx : -1))
     .filter((idx) => idx >= 0);

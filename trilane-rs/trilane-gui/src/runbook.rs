@@ -9,7 +9,9 @@ include!("runbook_helpers.inc.rs");
 
 #[cfg(test)]
 mod tests {
+    use super::scan_progress_from_runbook;
     use super::AuditMode;
+    use super::RunbookLaneUpdate;
     use super::RunbookState;
     use super::RunbookStatus;
     use super::StageStatus;

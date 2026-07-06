@@ -102,6 +102,17 @@ impl TriLaneWorkflow {
         }
     }
 
+    pub fn new_from_stage(objective: String, stage_id: &str) -> Result<Self, String> {
+        let mut workflow = Self::new(objective);
+        let current = workflow
+            .phases
+            .iter()
+            .position(|phase| phase.stage_id == stage_id)
+            .ok_or_else(|| format!("unknown workflow stage: {stage_id}"))?;
+        workflow.current = current;
+        Ok(workflow)
+    }
+
     pub fn begin(&mut self, state: &RunbookState) -> WorkflowAction {
         self.submit_current(state, false)
     }
@@ -116,6 +127,13 @@ impl TriLaneWorkflow {
             self.repairs_for_current = 0;
             self.progress_repairs_for_current = 0;
             self.progress_seen_for_current = false;
+            return self.submit_current(state, false);
+        }
+
+        if phase.gate == PhaseGate::S2Lane
+            && state.s2_required_lanes_complete()
+            && !state.s2_quick_hits_finished()
+        {
             return self.submit_current(state, false);
         }
 
@@ -251,9 +269,7 @@ fn phase_satisfied(
             state.surfaces.len() > baseline.surfaces
                 || state.stats.coverage_mapped > baseline.coverage_mapped
         }
-        PhaseGate::S2Lane => {
-            state.s2_required_lanes_complete()
-        }
+        PhaseGate::S2Lane => state.s2_required_lanes_complete() && state.s2_quick_hits_finished(),
         PhaseGate::S3Merge => has_runbook_marker(state, "S3"),
         PhaseGate::S4Probe => {
             if state.claims.is_empty() && state.findings.is_empty() {
@@ -396,7 +412,7 @@ fn phase_prompt(
          - This is a backend-controlled workflow. Stay inside this phase; do not jump ahead.\n\
          - Do not emit a final report before S5.\n\
          - Use concrete source paths, routes, commands, payloads, and controls. No vibes.\n\
-         - Emit compact machine-readable ledger markers. FEATURE%/OBLIGATION%/SURFACE%/CLAIM% lines count; prose without markers does not count.\n\
+         - Emit compact machine-readable markers only for state the backend must persist. CLAIM% and FINDING% are primary; SURFACE% should stay bounded and useful.\n\
          - Use these categories when applicable: auth, authz, session, injection, xss, cors_headers_tls, ssrf_redirect, file_upload_xxe, traversal_lfi, state_invariant_abuse, anti_automation_bypass, rate_limit, secrets_config, observability_leak, crypto.\n\
          - Recover broad web application coverage: auth bypass, object ownership, mass assignment, SQL/NoSQL/template/command injection, unsafe eval/sandbox, parser abuse, XXE/YAML/zip, traversal/LFI, SSRF/open redirect, stored/reflected/DOM/header XSS, CORS/header trust flaws, JWT/key/algorithm flaws, weak crypto, exposed APIs/config/metrics/logs/files, state invariant abuse, recovery/anti-automation/rate-limit gaps.\n\n\
          PHASE_CONTRACT%\n{}\n\n\
