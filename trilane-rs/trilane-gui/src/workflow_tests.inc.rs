@@ -31,12 +31,12 @@
     }
 
     #[test]
-    fn s3_prompt_consumes_only_stage2_claim_pool() {
+    fn s3_prompt_consumes_stage2_claims_and_unresolved_obligation_debt() {
         let mut state = RunbookState::default();
         state.start_turn("audit target", AuditMode::Lab);
         state.current_stage = "stage1".to_string();
         state.record_agent_message(
-            "CLAIM% id=OBL-01 category=auth target=routes/old.ts title=old_s1_obligation reason=s1_debt impact=unknown\n\
+            "OBLIGATION% id=AUTH-OBL-01 category=auth target=routes/old.ts must=verify_object_ownership evidence=s1_debt impact=account_takeover\n\
              CANDIDATE% id=CAND-01 category=auto target=unmapped-feature title=generic_placeholder\n\
              ATTACK_ATOM% id=ATOM-01 lane=identity_engine kind=surface category=auth target=/old label=old_atom bridge_keys=identity claim=OBL-01 confidence=signal",
         );
@@ -56,12 +56,15 @@
             .prompt
             .contains("MERGE_PACKET% mode=s3_claim_pool"));
         assert!(prompt.prompt.contains("CLAIM% id=ID-01"));
+        assert!(prompt.prompt.contains("CLAIM% id=AUTH-OBL-01"));
+        assert!(prompt.prompt.contains("status=debt"));
+        assert!(prompt.prompt.contains("unresolved obligation debt"));
         assert!(prompt.prompt.contains("Do not call tools"));
         assert!(prompt.prompt.contains("Reuse input claim ids exactly"));
         assert!(prompt.prompt.contains("MERGE% id=<duplicate-input-id>"));
         assert!(prompt.prompt.contains("Do not emit DUPLICATE%"));
         assert!(prompt.prompt.contains("do not invent CANON-*"));
-        assert!(!prompt.prompt.contains("CLAIM% id=OBL-01"));
+        assert!(!prompt.prompt.contains("only stage2 claim pool"));
         assert!(!prompt.prompt.contains("CANDIDATE% id=CAND-01"));
         assert!(!prompt.prompt.contains("ATTACK_ATOM% id=ATOM-01"));
     }
@@ -192,6 +195,31 @@
     }
 
     #[test]
+    fn s4_prompt_consumes_debt_derived_stage3_handoff() {
+        let mut state = RunbookState::default();
+        state.start_turn("audit target", AuditMode::Lab);
+        state.current_stage = "stage3".to_string();
+        state.record_agent_message(
+            "RUNBOOK% S3 Summary: debt handoff retained\n\
+             CLAIM% id=AUTH-OBL-01 category=auth target=routes/accounts.ts status=debt level=signal severity=high title=object_ownership_debt reason=obligation_debt impact=account_takeover next=poc:object-ownership-debt",
+        );
+
+        let mut workflow =
+            TriLaneWorkflow::new_from_stage("audit target".to_string(), "stage4")
+                .expect("stage4 workflow");
+        let WorkflowAction::Submit(prompt) = workflow.begin(&state) else {
+            panic!("expected stage4 prompt");
+        };
+
+        assert!(prompt.prompt.contains("CLAIM% id=AUTH-OBL-01"));
+        assert!(prompt.prompt.contains("status=debt"));
+        assert!(prompt
+            .prompt
+            .contains("status=debt still require explicit closure"));
+        assert!(prompt.prompt.contains("VERIFY%, S4_SKIP%, or REJECTED%"));
+    }
+
+    #[test]
     fn s4_regression_sweep_is_late_blackbox_only() {
         let mut state = RunbookState::default();
         state.start_turn("audit target", AuditMode::Lab);
@@ -260,12 +288,12 @@
         assert!(s1_text.contains("object_ownership_index"));
         assert!(s1_text.contains("source_sink_index"));
         assert!(s1_text.contains("config_docs_debug_index"));
-        assert!(s1_text.contains("login SQLi"));
-        assert!(s1_text.contains("JWT forge or algorithm confusion"));
-        assert!(s1_text.contains("basket/object ownership"));
-        assert!(s1_text.contains("password reset/change"));
-        assert!(s1_text.contains("2FA/security question/CAPTCHA"));
-        assert!(s1_text.contains("wallet/coupon/deluxe/order/data export"));
+        assert!(s1_text.contains("auth bypass"));
+        assert!(s1_text.contains("session/JWT/key trust"));
+        assert!(s1_text.contains("object ownership/IDOR"));
+        assert!(s1_text.contains("account recovery/change flows"));
+        assert!(s1_text.contains("MFA/security-question/CAPTCHA anti-automation"));
+        assert!(s1_text.contains("pricing/entitlement/order/review/export workflow abuse"));
         assert!(s1_text.contains("per_lane_max=5"));
         assert!(s1_text.contains("priority=high_only"));
         assert!(s1_text.contains("deduplicate by path+kind+category"));
@@ -725,6 +753,28 @@
         let s4 = super::compact_s4_handoff_packet(&state, "s4_auth_authz_session_controls", 20);
         assert!(s4.contains("next=poc:jwt-none"));
         assert!(s4.contains("next=poc:jwt-hs256-confusion"));
+    }
+
+    #[test]
+    fn s3_packet_promotes_uncovered_obligation_debt_without_raw_flood() {
+        let mut state = RunbookState::default();
+        state.start_turn("audit target", AuditMode::Lab);
+        state.current_stage = "stage1".to_string();
+        state.record_agent_message(
+            "OBLIGATION% id=ING-OBL-01 category=ssrf_redirect target=routes/profileImage.ts must=trace_outbound_fetch evidence=source_sink_prior impact=server_side_fetch\n\
+             CANDIDATE% id=CAND-01 category=auto target=unmapped-feature title=generic_placeholder",
+        );
+        state.current_stage = "stage2".to_string();
+        state.record_agent_message(
+            "CLAIM% id=ID-001 category=auth target=routes/login.ts severity=high confidence=high title=login_sqli reason=raw_sql impact=auth_bypass next=poc:login-sqli",
+        );
+
+        let s3 = super::compact_s3_claim_pool(&state, 20);
+        assert!(s3.contains("CLAIM% id=ID-001"));
+        assert!(s3.contains("CLAIM% id=ING-OBL-01"));
+        assert!(s3.contains("status=debt"));
+        assert!(s3.contains("note=s3_consumes_claims_and_unresolved_debt"));
+        assert!(!s3.contains("CANDIDATE% id=CAND-01"));
     }
 
     #[test]

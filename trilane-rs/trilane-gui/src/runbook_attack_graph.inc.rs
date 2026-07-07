@@ -576,7 +576,7 @@ fn confidence_from_claim_status(status: &ClaimStatus) -> &'static str {
     match status {
         ClaimStatus::Publishable | ClaimStatus::Weaponized | ClaimStatus::Verified => "high",
         ClaimStatus::Corroborated | ClaimStatus::Anchored | ClaimStatus::Armed => "medium",
-        ClaimStatus::Running | ClaimStatus::Seed => "signal",
+        ClaimStatus::Running | ClaimStatus::Seed | ClaimStatus::Debt => "signal",
         ClaimStatus::Blocked | ClaimStatus::Discarded | ClaimStatus::Merged => "low",
     }
 }

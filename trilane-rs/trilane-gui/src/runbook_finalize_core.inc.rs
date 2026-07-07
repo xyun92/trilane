@@ -223,7 +223,11 @@ fn explicit_poc_id(finding: &RunbookFinding) -> Option<String> {
 fn should_materialize_claim(claim: &RunbookClaim) -> bool {
     if matches!(
         claim.status,
-        ClaimStatus::Seed | ClaimStatus::Blocked | ClaimStatus::Discarded | ClaimStatus::Merged
+        ClaimStatus::Seed
+            | ClaimStatus::Debt
+            | ClaimStatus::Blocked
+            | ClaimStatus::Discarded
+            | ClaimStatus::Merged
     ) {
         return false;
     }

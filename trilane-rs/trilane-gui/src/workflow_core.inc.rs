@@ -311,7 +311,7 @@ fn max_repairs_for_phase(_phase: &WorkflowPhase, _state: &RunbookState) -> usize
 
 fn phase_repair_instruction(phase: &WorkflowPhase, _state: &RunbookState) -> String {
     if phase.gate == PhaseGate::S3Merge {
-        return "\nWORKFLOW_REPAIR% S3 did not produce a clean output-only claim handoff or it used commands. Do not call tools. Re-read only RUNBOOK_CONTEXT, then emit RUNBOOK% S3 Summary plus bare CLAIM%/MERGE%/CHAIN_CANDIDATE%/BREADTH% rows. Reuse input ids exactly and do not emit DUPLICATE%, PROBE%, CONTROL%, VERIFY%, REJECTED%, FINDING%, markdown tables, or prose.\n".to_string();
+        return "\nWORKFLOW_REPAIR% S3 did not produce a clean output-only claim/debt handoff or it used commands. Do not call tools. Re-read only RUNBOOK_CONTEXT, then emit RUNBOOK% S3 Summary plus bare CLAIM%/MERGE%/CHAIN_CANDIDATE%/BREADTH% rows. Reuse input ids exactly, keep unresolved obligation rows as CLAIM% status=debt when still in scope, and do not emit DUPLICATE%, PROBE%, CONTROL%, VERIFY%, REJECTED%, FINDING%, markdown tables, or prose.\n".to_string();
     }
     "\nWORKFLOW_REPAIR% The previous turn did not satisfy this phase contract. Do not apologize. Emit the missing machine-readable ledger lines now, then continue only within this same phase.\n".to_string()
 }
@@ -380,18 +380,24 @@ fn has_service_status_marker(state: &RunbookState) -> bool {
 }
 
 fn s3_has_clean_handoff(state: &RunbookState) -> bool {
-    let has_live_stage2_input = state.claims.iter().any(|claim| {
-        claim.stage == "stage2"
-            && claim_status_is_live(claim.status.as_marker())
-            && claim_id_is_lane_claim(&claim.id)
-    });
-    if !has_live_stage2_input {
+    let live_stage2_claims = state
+        .claims
+        .iter()
+        .filter(|claim| {
+            claim.stage == "stage2"
+                && claim_status_is_live(claim.status.as_marker())
+                && claim_id_is_lane_claim(&claim.id)
+        })
+        .collect::<Vec<_>>();
+    let has_s3_input =
+        !live_stage2_claims.is_empty() || !unresolved_obligation_debt_claims(state, &live_stage2_claims).is_empty();
+    if !has_s3_input {
         return true;
     }
     state.claims.iter().any(|claim| {
         claim.stage == "stage3"
             && claim_status_is_live(claim.status.as_marker())
-            && claim_id_is_lane_claim(&claim.id)
+            && claim_is_handoff_claim(claim)
     })
 }
 

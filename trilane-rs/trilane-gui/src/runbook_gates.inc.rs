@@ -211,7 +211,7 @@ impl RunbookState {
             .filter(|claim| {
                 matches!(
                     claim.status,
-                    ClaimStatus::Seed | ClaimStatus::Armed | ClaimStatus::Running
+                    ClaimStatus::Seed | ClaimStatus::Debt | ClaimStatus::Armed | ClaimStatus::Running
                 )
             })
             .count();
@@ -335,7 +335,7 @@ impl RunbookState {
             same_domain(&claim.category, domain)
                 && matches!(
                     claim.status,
-                    ClaimStatus::Seed | ClaimStatus::Armed | ClaimStatus::Running
+                    ClaimStatus::Seed | ClaimStatus::Debt | ClaimStatus::Armed | ClaimStatus::Running
                 )
         });
         !has_open_candidate && !has_open_claim

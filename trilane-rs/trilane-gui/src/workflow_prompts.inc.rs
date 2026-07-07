@@ -882,12 +882,16 @@ fn compact_s3_claim_pool(state: &RunbookState, max_items: usize) -> String {
             })
             .collect::<Vec<_>>();
     }
+    let debts = unresolved_obligation_debt_claims(state, &claims);
+    let claim_budget = claims.len().min(max_items);
+    let debt_budget = max_items.saturating_sub(claim_budget);
 
     let mut lines = Vec::new();
     lines.push(format!(
-        "MERGE_PACKET% mode=s3_claim_pool source=stage2 claims={} included={} surfaces={} note=s3_consumes_claims_only",
+        "MERGE_PACKET% mode=s3_claim_pool source=stage2_claims_plus_obligation_debt claims={} included={} debts={} surfaces={} note=s3_consumes_claims_and_unresolved_debt",
         state.claims.len(),
-        claims.len().min(max_items),
+        claim_budget,
+        debts.len().min(debt_budget),
         state.surfaces.len(),
     ));
     for claim in claims.into_iter().take(max_items) {
@@ -905,6 +909,20 @@ fn compact_s3_claim_pool(state: &RunbookState, max_items: usize) -> String {
             marker_text(&poc_next_for_claim(claim), 160),
         ));
     }
+    for debt in debts.into_iter().take(debt_budget) {
+        lines.push(format!(
+            "CLAIM% id={} category={} target={} status=debt level={} severity={} title={} reason=obligation_debt:{} impact={} next={}",
+            marker_text(&debt.id, 48),
+            marker_token(&debt.category, 48),
+            marker_target(&debt.target, &debt.title, 140),
+            debt.evidence_level.as_marker(),
+            debt.severity.as_deref().unwrap_or("unknown"),
+            marker_text(&debt.title, 180),
+            marker_text(&debt.positive_evidence, 180),
+            marker_text(&debt.impact, 180),
+            marker_text(&poc_next_for_claim(debt), 160),
+        ));
+    }
     lines
         .into_iter()
         .map(|line| line.replace('\n', " "))
@@ -916,14 +934,14 @@ fn compact_s4_handoff_packet(state: &RunbookState, phase_id: &str, max_items: us
     let has_stage3_claims = state.claims.iter().any(|claim| {
         claim.stage == "stage3"
             && claim_status_is_live(claim.status.as_marker())
-            && claim_id_is_lane_claim(&claim.id)
+            && claim_is_handoff_claim(claim)
     });
     let claims = state
         .claims
         .iter()
         .filter(|claim| {
             claim_status_is_live(claim.status.as_marker())
-                && claim_id_is_lane_claim(&claim.id)
+                && claim_is_handoff_claim(claim)
                 && (!has_stage3_claims || matches!(claim.stage.as_str(), "stage3" | "stage4"))
                 && s4_claim_matches_phase(phase_id, &claim.category)
         })
@@ -931,7 +949,7 @@ fn compact_s4_handoff_packet(state: &RunbookState, phase_id: &str, max_items: us
 
     let mut lines = Vec::new();
     lines.push(format!(
-        "MERGE_PACKET% mode=s4_handoff phase={} source=stage3 claims={} included={} surfaces={} note=s4_consumes_canonical_claims_only",
+        "MERGE_PACKET% mode=s4_handoff phase={} source=stage3 claims={} included={} surfaces={} note=s4_consumes_canonical_claims_and_debt_only",
         phase_id,
         state.claims.len(),
         claims.len().min(max_items),
@@ -1026,6 +1044,10 @@ fn claim_status_is_live(status: &str) -> bool {
     !matches!(status, "merged" | "discarded" | "blocked")
 }
 
+fn claim_is_handoff_claim(claim: &crate::runbook_claims::RunbookClaim) -> bool {
+    claim_id_is_lane_claim(&claim.id) || matches!(claim.status, crate::runbook_claims::ClaimStatus::Debt)
+}
+
 fn claim_id_is_lane_claim(id: &str) -> bool {
     matches!(
         id,
@@ -1038,4 +1060,62 @@ fn claim_id_is_lane_claim(id: &str) -> bool {
             || value.starts_with("CONFIG-CAND-")
             || value.starts_with("QH-CAND-")
     )
+}
+
+fn unresolved_obligation_debt_claims<'a>(
+    state: &'a RunbookState,
+    claims: &[&'a crate::runbook_claims::RunbookClaim],
+) -> Vec<&'a crate::runbook_claims::RunbookClaim> {
+    let mut debts = state
+        .claims
+        .iter()
+        .filter(|claim| {
+            matches!(claim.stage.as_str(), "stage1" | "stage2")
+                && claim_status_is_live(claim.status.as_marker())
+                && claim_has_obligation_evidence(state, claim)
+                && claim_category_is_high_value(&claim.category)
+                && !claim_is_covered_by_claims(claim, claims)
+        })
+        .collect::<Vec<_>>();
+    debts.sort_by_key(|claim| {
+        (
+            usize::from(claim.evidence_level.as_marker() != "source-backed"),
+            claim.category.clone(),
+            claim.id.clone(),
+        )
+    });
+    debts
+}
+
+fn claim_has_obligation_evidence(
+    state: &RunbookState,
+    claim: &crate::runbook_claims::RunbookClaim,
+) -> bool {
+    claim.positive_evidence.contains("must=")
+        || state
+            .evidence
+            .iter()
+            .any(|evidence| evidence.kind == "obligation" && evidence.title == claim.id)
+}
+
+fn claim_category_is_high_value(category: &str) -> bool {
+    !matches!(
+        marker_token(category, 48).as_str(),
+        "auto" | "unknown" | "info" | "informational" | "non_security"
+    )
+}
+
+fn claim_is_covered_by_claims(
+    debt: &crate::runbook_claims::RunbookClaim,
+    claims: &[&crate::runbook_claims::RunbookClaim],
+) -> bool {
+    let debt_unit = poc_next_for_claim(debt);
+    claims.iter().any(|claim| {
+        claim.id == debt.id
+            || claim.fingerprint == debt.fingerprint
+            || poc_next_for_claim(claim) == debt_unit
+            || (claim.category == debt.category
+                && claim.target == debt.target
+                && debt.target != "unmapped-feature")
+    })
 }

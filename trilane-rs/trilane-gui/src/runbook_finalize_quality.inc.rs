@@ -321,7 +321,7 @@ fn verification_status_from_claim(claim: &RunbookClaim) -> &'static str {
         ClaimStatus::Corroborated => "runtime-signal",
         ClaimStatus::Anchored => "source-backed",
         ClaimStatus::Armed | ClaimStatus::Running => "needs-poc",
-        ClaimStatus::Seed => "signal",
+        ClaimStatus::Seed | ClaimStatus::Debt => "signal",
         ClaimStatus::Discarded => "discarded",
         ClaimStatus::Merged => "merged",
     }

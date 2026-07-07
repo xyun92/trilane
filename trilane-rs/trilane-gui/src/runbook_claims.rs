@@ -5,6 +5,7 @@ use serde::Serialize;
 #[serde(rename_all = "snake_case")]
 pub enum ClaimStatus {
     Seed,
+    Debt,
     Anchored,
     Armed,
     Running,
@@ -20,6 +21,7 @@ pub enum ClaimStatus {
 impl ClaimStatus {
     pub fn from_marker(value: &str) -> Self {
         match normalize_token(value).as_str() {
+            "debt" | "obligation" | "coverage_debt" | "unresolved_debt" => Self::Debt,
             "anchored" | "sourceconfirmed" | "sourcebacked" => Self::Anchored,
             "armed" | "ready" | "readyforverification" => Self::Armed,
             "running" | "executing" | "probing" => Self::Running,
@@ -37,6 +39,7 @@ impl ClaimStatus {
     pub fn as_marker(&self) -> &'static str {
         match self {
             Self::Seed => "seed",
+            Self::Debt => "debt",
             Self::Anchored => "anchored",
             Self::Armed => "armed",
             Self::Running => "running",
@@ -53,6 +56,7 @@ impl ClaimStatus {
     pub fn rank(&self) -> usize {
         match self {
             Self::Seed => 1,
+            Self::Debt => 1,
             Self::Anchored => 2,
             Self::Armed => 3,
             Self::Running => 4,
