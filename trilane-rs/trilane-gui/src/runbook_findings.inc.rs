@@ -46,8 +46,19 @@ impl RunbookState {
             &input.payload,
             input.confidence,
         );
-        let mut status = status_from_evidence(&evidence_level, false);
-        if matches!(status, ClaimStatus::Verified | ClaimStatus::Weaponized)
+        let requested_status = input.evidence_state.trim().to_ascii_lowercase();
+        let mut status = if matches!(
+            requested_status.as_str(),
+            "generated-not-verified" | "needs-poc"
+        ) {
+            ClaimStatus::Armed
+        } else {
+            status_from_evidence(&evidence_level, false)
+        };
+        if !matches!(
+            requested_status.as_str(),
+            "generated-not-verified" | "needs-poc"
+        ) && matches!(status, ClaimStatus::Verified | ClaimStatus::Weaponized)
             && !input.payload.trim().is_empty()
             && !input.code_path.trim().is_empty()
         {
@@ -278,6 +289,9 @@ impl RunbookState {
                     .or_else(|| marker_value(line, "result"))
                     .unwrap_or_else(|| strip_marker(line).to_string());
                 self.record_verify(&id, current_stage, &signal, line);
+            } else if lower.starts_with("poc%") {
+                self.extract_poc_marker(current_stage, line);
+                attack_graph_dirty = true;
             } else if lower.starts_with("finding%") {
                 self.extract_finding_marker(current_stage, line);
                 attack_graph_dirty = true;
@@ -366,6 +380,129 @@ impl RunbookState {
             evidence_state: evidence_gate(&code_path, &evidence, &confidence),
             detail: truncate(&evidence, 500),
             payload: truncate(&payload, 900),
+        });
+    }
+
+    fn poc_title_from_source(&self, source_id: Option<&str>, category: &str, target: &str) -> String {
+        if let Some(id) = source_id {
+            if let Some(claim) = self.claims.iter().find(|claim| claim.id == id) {
+                if claim.title != id {
+                    return claim.title.clone();
+                }
+            }
+            if let Some(finding) = self.findings.iter().find(|finding| finding.id == id) {
+                if finding.title != id {
+                    return finding.title.clone();
+                }
+            }
+            if let Some(candidate) = self.candidates.iter().find(|candidate| candidate.id == id) {
+                if candidate.title != id {
+                    return candidate.title.clone();
+                }
+            }
+        }
+        let target = target.trim();
+        if target.is_empty() {
+            format!("{category} PoC")
+        } else {
+            format!("{category} PoC for {target}")
+        }
+    }
+
+    fn poc_has_s4_control(&self, source_id: Option<&str>, refs: &str) -> bool {
+        let mut ids = source_id
+            .into_iter()
+            .map(|id| id.to_ascii_lowercase())
+            .collect::<Vec<_>>();
+        ids.extend(
+            refs.split([',', ';', ' '])
+                .map(str::trim)
+                .filter(|id| !id.is_empty())
+                .map(str::to_ascii_lowercase),
+        );
+        if ids.is_empty() {
+            return false;
+        }
+        let mut has_positive = false;
+        let mut has_control = false;
+        for evidence in &self.evidence {
+            if evidence.stage != "stage4" {
+                continue;
+            }
+            let text = format!("{}\n{}", evidence.title, evidence.detail).to_ascii_lowercase();
+            if !ids.iter().any(|id| text.contains(id)) {
+                continue;
+            }
+            has_positive |= text.contains("probe%") || text.contains("verify%");
+            has_control |= text.contains("control%");
+        }
+        has_positive && has_control
+    }
+
+    fn extract_poc_marker(&mut self, stage: &str, line: &str) {
+        let severity = marker_value(line, "severity").unwrap_or_else(|| infer_severity(line));
+        let code_path = marker_value(line, "code_path")
+            .or_else(|| marker_value(line, "source"))
+            .unwrap_or_default();
+        let target = marker_value(line, "target").unwrap_or_default();
+        let category = marker_value(line, "category").unwrap_or_else(|| infer_category(line));
+        let source_id = marker_value(line, "finding")
+            .or_else(|| marker_value(line, "claim"))
+            .or_else(|| marker_value(line, "id"));
+        let title = marker_value(line, "title")
+            .unwrap_or_else(|| self.poc_title_from_source(source_id.as_deref(), &category, &target));
+        let precondition = marker_value(line, "precondition").unwrap_or_default();
+        let replay = marker_value(line, "replay")
+            .or_else(|| marker_value(line, "payload"))
+            .or_else(|| marker_value(line, "poc"))
+            .unwrap_or_default();
+        let expected = marker_value(line, "expected")
+            .or_else(|| marker_value(line, "evidence"))
+            .unwrap_or_default();
+        let impact = marker_value(line, "impact").unwrap_or_default();
+        let requested_verification =
+            marker_value(line, "verification").unwrap_or_else(|| "generated-not-verified".to_string());
+        let cleanup = marker_value(line, "cleanup").unwrap_or_else(|| "none".to_string());
+        let refs = marker_value(line, "evidence_refs")
+            .or_else(|| marker_value(line, "refs"))
+            .unwrap_or_default();
+        let verification =
+            if requested_verification == "verified" && !self.poc_has_s4_control(source_id.as_deref(), &refs) {
+                "generated-not-verified".to_string()
+            } else {
+                requested_verification
+            };
+        let confidence = if verification == "verified" {
+            "high"
+        } else {
+            "medium"
+        };
+        if let Some(id) = source_id.as_deref() {
+            self.upsert_candidate_with_id(
+                stage,
+                Some(id.to_string()),
+                &category,
+                &title,
+                target.clone(),
+            );
+        }
+        let detail = format!(
+            "POC_ENTRY\ncategory={category}\ntarget={}\nprecondition={}\nexpected={}\nimpact={}\nverification={verification}\ncleanup={cleanup}\nevidence_refs={refs}",
+            empty_dash(&target),
+            empty_dash(&precondition),
+            empty_dash(&expected),
+            empty_dash(&impact),
+        );
+        self.add_finding(RunbookFindingInput {
+            stage,
+            candidate_id: source_id,
+            severity: &severity,
+            title: &title,
+            code_path: &code_path,
+            confidence,
+            evidence_state: &verification,
+            detail: truncate(&detail, 700),
+            payload: truncate(&replay, 900),
         });
     }
 

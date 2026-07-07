@@ -417,6 +417,18 @@ impl RunbookState {
             );
             self.claims[idx].evidence_level =
                 self.claims[idx].evidence_level.clone().merge(level.clone());
+            let explicit_poc_limit = self.claims[idx].positive_evidence.to_ascii_lowercase();
+            if contains_any(
+                &explicit_poc_limit,
+                &[
+                    "verification=generated-not-verified",
+                    "verification: generated-not-verified",
+                    "verification=needs-poc",
+                    "verification: needs-poc",
+                ],
+            ) {
+                continue;
+            }
             let promoted = if has_source && has_payload && has_negative {
                 ClaimStatus::Publishable
             } else if has_source && has_payload {

@@ -64,11 +64,34 @@ impl RunbookState {
         } else {
             self.final_findings.clone()
         };
+        let verified = findings
+            .iter()
+            .filter(|finding| {
+                matches!(
+                    finding.verification_status.as_str(),
+                    "publishable" | "weaponized" | "verified"
+                )
+            })
+            .count();
+        let generated_not_verified = findings
+            .iter()
+            .filter(|finding| finding.verification_status == "generated-not-verified")
+            .count();
+        let needs_poc = findings
+            .iter()
+            .filter(|finding| {
+                finding.payload.trim().is_empty()
+                    || matches!(
+                        finding.verification_status.as_str(),
+                        "source-backed" | "runtime-signal" | "needs-poc"
+                    )
+            })
+            .count();
         let mut report = String::new();
-        report.push_str("# TriLane Final Security Findings\n\n");
+        report.push_str("# TriLane PoC Bundle\n\n");
         report.push_str(&format!(
-            "- Objective: {}\n- Audit mode: {}\n- Workflow status: {:?}\n- Turn: {}\n- Root claims: {}\n- Publishable claims: {}\n- Raw findings: {}\n- Final findings: {}\n- Duplicates collapsed: {}\n- Needs PoC: {}\n\n",
-            self.objective,
+            "- Objective: {}\n- Audit mode: {}\n- Workflow status: {:?}\n- Turn: {}\n- Root claims: {}\n- Publishable claims: {}\n- Raw findings: {}\n- PoC entries: {}\n- Verified PoCs: {}\n- Generated-not-verified PoCs: {}\n- Needs PoC: {}\n- Duplicates collapsed: {}\n\n",
+            report_objective(&self.objective),
             self.audit_mode.as_marker(),
             self.status,
             self.turn_id.as_deref().unwrap_or("unknown"),
@@ -76,14 +99,16 @@ impl RunbookState {
             self.claim_summary.publishable,
             self.dedupe_summary.raw_findings.max(self.findings.len()),
             findings.len(),
+            verified,
+            generated_not_verified,
+            needs_poc,
             self.dedupe_summary.duplicates,
-            self.dedupe_summary.needs_poc,
         ));
-        report.push_str("## Findings\n\n");
+        report.push_str("## PoC Entries\n\n");
         for finding in &findings {
             report.push_str(&format!("### {} - {}\n\n", finding.id, finding.title));
             report.push_str(&format!(
-                "- Severity: {}\n- Status: {}\n- Confidence: {}\n- Location: {}\n- Code path: {}\n- Candidate: {}\n- Duplicates collapsed: {}\n\n",
+                "- Severity: {}\n- Verification: {}\n- Confidence: {}\n- Target/location: {}\n- Code path: {}\n- Source claim/finding: {}\n- Duplicates collapsed: {}\n\n",
                 finding.severity.to_uppercase(),
                 finding.verification_status,
                 finding.confidence,
@@ -92,15 +117,17 @@ impl RunbookState {
                 finding.candidate_id.as_deref().unwrap_or("-"),
                 finding.duplicates.len(),
             ));
-            report.push_str("Evidence:\n\n");
+            report.push_str("PoC metadata:\n\n");
             report.push_str("```text\n");
             report.push_str(&finding.detail);
             report.push_str("\n```\n\n");
             if !finding.payload.trim().is_empty() {
-                report.push_str("Payload / Exploit:\n\n");
+                report.push_str("Replay:\n\n");
                 report.push_str("```text\n");
                 report.push_str(&finding.payload);
                 report.push_str("\n```\n\n");
+            } else {
+                report.push_str("Replay: `needs-poc`\n\n");
             }
         }
         report
@@ -437,4 +464,30 @@ impl RunbookState {
         }
     }
 
+}
+
+fn report_objective(objective: &str) -> String {
+    let head = objective
+        .split("RESUME_RUN_CONTEXT%")
+        .next()
+        .unwrap_or(objective)
+        .split("RUNBOOK_CONTEXT%")
+        .next()
+        .unwrap_or(objective);
+    let cleaned = head
+        .lines()
+        .filter(|line| {
+            let lower = line.to_ascii_lowercase();
+            !lower.contains("/.trilane/runs/")
+                && !lower.contains("stage0/")
+                && !lower.contains("stage1/")
+                && !lower.contains("stage2/")
+                && !lower.contains("stage3/")
+                && !lower.contains("stage4/")
+                && !lower.contains("stage5/")
+                && !lower.starts_with("resume_run_context%")
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    truncate(&cleaned, 320)
 }

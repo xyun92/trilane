@@ -73,12 +73,12 @@ Evidence ladder:
 
 Rules:
 - S2 may create many `seed` and `anchored` claims, but should not overclaim them as final.
-- S3 must merge same-root claims using `MERGE%` before summary, and it must happen before S4.
+- S3 must merge same-PoC-unit duplicates using `MERGE%` before summary, and it must happen before S4.
 - S4 must add `PROBE%` and `CONTROL%` pairs for high-value claims, or a per-claim `S4_SKIP%` with a source-backed reason when live probing is unsafe or irrelevant.
 - S5 must emit `RUNBOOK% S5 Verify` and `ADJUDICATE%` for every surviving claim family before final reporting.
 - `publishable` is a hard gate. A publishable finding needs all three: source/root-cause anchor, exploit or payload proof, and a negative-control/isolation result.
 - `weaponized` needs runtime/repro evidence, not just a plausible payload.
-- S5 merges by vulnerability family before reporting: same root cause, route/sink, challenge key, or exploit primitive = one finding. Payload variants belong under the canonical finding.
+- S5 merges by vulnerability family before reporting: same exploit action plus same route/sink, object boundary, and payload primitive = one PoC. Payload variants belong under the canonical PoC.
 - Claims such as "unauthenticated" or "no auth" must inspect parent route middleware and route registration order. A single route line is not enough.
 
 ## Coverage Domains
@@ -86,6 +86,21 @@ Map the target across these categories:
 `auth`, `authz`, `session`, `injection`, `xss`, `ssrf_redirect`, `file_upload_xxe`, `traversal_lfi`, `secrets_config`, `info_disclosure`, `cors_headers_tls`, `rate_limit`, `business_logic`, `crypto`, `debug_metrics_docs`.
 
 Target a scale-appropriate set of high-quality independent vulnerability families where the app surface supports it. Do not force a fixed count; blocked, duplicate, out-of-scope, and source-only claims must stay visibly classified instead of being counted as high-quality findings.
+
+## Stage Agent Rules
+All stages:
+- Work as a workflow executor, not a chat assistant. Avoid planning diaries, self-debate, and "let me now..." narration.
+- Stay inside the current stage. Do not jump ahead to reporting, PoC packaging, or broad re-audits.
+- Emit only machine-readable rows that the current stage contract allows. Keep prose short and factual.
+- If evidence is partial, preserve it with honest status instead of silently dropping a credible family.
+
+Stage reminders:
+- S0 admits the target: scope, source path, service state, project shape, and blockers only.
+- S1 indexes the target for S2. It is not a deep-proof phase; produce bounded `SURFACE%`, `OBLIGATION%`, `READ_TARGET%`, and coverage rows.
+- S2 is candidate discovery. Workflow-owned lanes emit `CLAIM%` rows only, with source-only micro-verification and `next=poc:<stable-unit>`.
+- S3 is output-only canonicalization. Do not run tools or inspect source; preserve one exploitable action as one PoC unit.
+- S4 verifies targeted handoff claims with probes, controls, rejection, or source-backed skips. It is not broad rediscovery.
+- S5 packages clean PoC rows. Do not re-audit; preserve supported families with honest verification labels.
 
 ## Workflow
 
@@ -108,18 +123,20 @@ Do not promise to emit the S1 ledger later. Emit the actual ledger lines before 
 The backend scheduler launches five workflow-owned child lanes with bounded concurrency and retry/backoff. The root model must not open its own S2 child lanes. It receives a compact `RUNBOOK_CONTEXT%` merge packet after the lane ledgers join.
 
 Lane domains:
-- auth_authz_session_rate_limit
-- injection_xss_eval
-- files_ssrf_traversal_parsers
-- business_api_workflow
-- secrets_config_debug_crypto
+- identity_engine: auth, authz, session, ownership, IDOR/BOLA, roles, account flows.
+- injection_engine: SQL/NoSQL/template/command/eval, XSS, CORS and browser trust.
+- ingress_engine: uploads, parsers, traversal/LFI, SSRF, redirects, static ingress.
+- logic_engine: workflow/state invariants, anti-automation, rate limits, money/order/export/review flows.
+- config_engine: secrets, crypto, debug, docs, logs, metrics, exposed files.
+- quick_hits_engine: residual high-yield candidates after core lanes join.
 
 Each lane must:
 - Stay within its assigned domain.
-- Cite file:line anchors and payloads.
-- Emit candidates, claims, probes, controls, rejected/duplicate/out-of-scope dispositions, and provisional findings.
-- Return multiple independent hypotheses when a surface supports multiple attack primitives.
-- Keep output compact; do not paste whole files or large command output.
+- Read the supplied `SOURCE_PACKET%`, `SCANNER_PACKET%`, and S1 read targets before broadening.
+- Perform source-only micro-verification by reading decisive code windows.
+- Emit concise `CLAIM%` candidates only, with `target=<sink-file:line-or-route>`, `reason=<source->sink-short-proof>`, and `next=poc:<stable-unit>`.
+- Return multiple independent hypotheses when a surface supports multiple exploit primitives.
+- Keep output compact; do not paste whole files, large command output, summaries, final PoCs, probes, controls, findings, or dispositions.
 
 ### S3: Summary + FoA Snapshot
 - Emit `RUNBOOK% S3 Summary` before any S4 marker.
@@ -150,7 +167,7 @@ Before final reporting:
 - For memory-corruption or native targets, use generator/executor/validator separation when available.
 - For web/API targets, accept the triad only when exploit proof, source/root-cause proof, and a negative control/isolation check are all recorded.
 
-Final findings must use one canonical `FINDING%` per vulnerability family.
+Final PoC bundles must use one canonical `POC%` per vulnerability family. `FINDING%` may mirror `POC%` only for legacy GUI compatibility.
 
 ## Output Format
 When explaining findings in prose, use:

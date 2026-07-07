@@ -493,7 +493,7 @@ async fn export_final_report(state: State<'_, AppState>) -> Result<String, Strin
     std::fs::create_dir_all(&downloads)
         .map_err(|error| format!("Failed to create Downloads directory: {error}"))?;
     let filename = format!(
-        "trilane-final-report-{}.md",
+        "trilane-poc-bundle-{}.md",
         chrono::Local::now().format("%Y%m%d-%H%M%S")
     );
     let path = downloads.join(filename);

@@ -73,7 +73,7 @@ export default function FindingsPanel({ findings }: Props) {
 
       <div className="findings-actions">
         <button type="button" onClick={exportReport}>
-          DOWNLOAD REPORT
+          DOWNLOAD POC BUNDLE
         </button>
         {exportState && <span>{exportState}</span>}
       </div>

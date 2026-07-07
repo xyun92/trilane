@@ -12,7 +12,7 @@
 
         let final_phase = workflow.phases.last().expect("phase list is non-empty");
         assert_eq!(final_phase.id, "s5_final_revision");
-        assert!(final_phase.body.contains("replacement final set"));
+        assert!(final_phase.body.contains("replacement PoC set"));
     }
 
     #[test]
@@ -28,6 +28,195 @@
         };
         assert_eq!(prompt.phase_id, "s3_merge_foa");
         assert_eq!(prompt.stage_id, "stage3");
+    }
+
+    #[test]
+    fn s3_prompt_consumes_only_stage2_claim_pool() {
+        let mut state = RunbookState::default();
+        state.start_turn("audit target", AuditMode::Lab);
+        state.current_stage = "stage1".to_string();
+        state.record_agent_message(
+            "CLAIM% id=OBL-01 category=auth target=routes/old.ts title=old_s1_obligation reason=s1_debt impact=unknown\n\
+             CANDIDATE% id=CAND-01 category=auto target=unmapped-feature title=generic_placeholder\n\
+             ATTACK_ATOM% id=ATOM-01 lane=identity_engine kind=surface category=auth target=/old label=old_atom bridge_keys=identity claim=OBL-01 confidence=signal",
+        );
+        state.current_stage = "stage2".to_string();
+        state.record_agent_message(
+            "CLAIM% id=ID-01 category=auth target=routes/changePassword.ts severity=high confidence=high title=password_change_bypass reason=missing_current_password impact=account_takeover next=authorized_vs_attacker_password_change",
+        );
+
+        let mut workflow =
+            TriLaneWorkflow::new_from_stage("audit target".to_string(), "stage3")
+                .expect("stage3 workflow");
+        let WorkflowAction::Submit(prompt) = workflow.begin(&state) else {
+            panic!("expected stage3 prompt");
+        };
+
+        assert!(prompt
+            .prompt
+            .contains("MERGE_PACKET% mode=s3_claim_pool"));
+        assert!(prompt.prompt.contains("CLAIM% id=ID-01"));
+        assert!(prompt.prompt.contains("Do not call tools"));
+        assert!(prompt.prompt.contains("Reuse input claim ids exactly"));
+        assert!(prompt.prompt.contains("MERGE% id=<duplicate-input-id>"));
+        assert!(prompt.prompt.contains("Do not emit DUPLICATE%"));
+        assert!(prompt.prompt.contains("do not invent CANON-*"));
+        assert!(!prompt.prompt.contains("CLAIM% id=OBL-01"));
+        assert!(!prompt.prompt.contains("CANDIDATE% id=CAND-01"));
+        assert!(!prompt.prompt.contains("ATTACK_ATOM% id=ATOM-01"));
+    }
+
+    #[test]
+    fn s3_summary_without_clean_handoff_does_not_advance() {
+        let mut state = RunbookState::default();
+        state.start_turn("audit target", AuditMode::Lab);
+        state.current_stage = "stage2".to_string();
+        state.record_agent_message(
+            "CLAIM% id=ID-01 category=auth target=routes/login.ts severity=critical confidence=high title=login_sqli reason=raw_sql impact=auth_bypass next=s4_login_control",
+        );
+
+        let mut workflow =
+            TriLaneWorkflow::new_from_stage("audit target".to_string(), "stage3")
+                .expect("stage3 workflow");
+        let WorkflowAction::Submit(_) = workflow.begin(&state) else {
+            panic!("expected initial S3 prompt");
+        };
+
+        state.current_stage = "stage3".to_string();
+        state.record_agent_message("RUNBOOK% S3 Summary: claim pool reviewed");
+
+        let WorkflowAction::Submit(repair) = workflow.after_turn_completed(&state) else {
+            panic!("expected S3 repair, not S4 advance");
+        };
+        assert_eq!(repair.phase_id, "s3_merge_foa");
+        assert!(repair.is_repair);
+        assert!(repair.prompt.contains("Do not call tools"));
+        assert!(repair.prompt.contains("Reuse input ids exactly"));
+    }
+
+    #[test]
+    fn s3_clean_handoff_advances_to_s4() {
+        let mut state = RunbookState::default();
+        state.start_turn("audit target", AuditMode::Lab);
+        state.current_stage = "stage2".to_string();
+        state.record_agent_message(
+            "CLAIM% id=ID-01 category=auth target=routes/login.ts severity=critical confidence=high title=login_sqli reason=raw_sql impact=auth_bypass next=s4_login_control",
+        );
+
+        let mut workflow =
+            TriLaneWorkflow::new_from_stage("audit target".to_string(), "stage3")
+                .expect("stage3 workflow");
+        let WorkflowAction::Submit(_) = workflow.begin(&state) else {
+            panic!("expected initial S3 prompt");
+        };
+
+        state.current_stage = "stage3".to_string();
+        state.record_agent_message(
+            "RUNBOOK% S3 Summary: canonical claim families ready for S4\n\
+             CLAIM% id=ID-01 category=auth target=routes/login.ts status=seed level=signal severity=critical title=login_sqli reason=raw_sql impact=auth_bypass next=s4_login_control",
+        );
+
+        let WorkflowAction::Submit(next) = workflow.after_turn_completed(&state) else {
+            panic!("expected S4 prompt after clean S3 handoff");
+        };
+        assert_eq!(next.phase_id, "s4_auth_authz_session_controls");
+    }
+
+    #[test]
+    fn s3_clean_handoff_advances_even_if_command_evidence_exists() {
+        let mut state = RunbookState::default();
+        state.start_turn("audit target", AuditMode::Lab);
+        state.current_stage = "stage2".to_string();
+        state.record_agent_message(
+            "CLAIM% id=ID-01 category=auth target=routes/login.ts severity=critical confidence=high title=login_sqli reason=raw_sql impact=auth_bypass next=s4_login_control",
+        );
+
+        let mut workflow =
+            TriLaneWorkflow::new_from_stage("audit target".to_string(), "stage3")
+                .expect("stage3 workflow");
+        let WorkflowAction::Submit(_) = workflow.begin(&state) else {
+            panic!("expected initial S3 prompt");
+        };
+
+        state.current_stage = "stage3".to_string();
+        state.record_command(
+            "rg login routes/login.ts",
+            Some("routes/login.ts: raw login handler"),
+            "Completed",
+            Some(0),
+        );
+        state.record_agent_message(
+            "RUNBOOK% S3 Summary: canonical claim families ready for S4\n\
+             CLAIM% id=ID-01 category=auth target=routes/login.ts status=seed level=signal severity=critical title=login_sqli reason=raw_sql impact=auth_bypass next=s4_login_control",
+        );
+
+        let WorkflowAction::Submit(next) = workflow.after_turn_completed(&state) else {
+            panic!("expected S4 prompt after clean S3 handoff");
+        };
+        assert_eq!(next.phase_id, "s4_auth_authz_session_controls");
+    }
+
+    #[test]
+    fn s4_prompt_consumes_canonical_handoff_only() {
+        let mut state = RunbookState::default();
+        state.start_turn("audit target", AuditMode::Lab);
+        state.current_stage = "stage1".to_string();
+        state.record_agent_message(
+            "CLAIM% id=OBL-01 category=auth target=routes/old.ts title=old_s1_obligation reason=s1_debt impact=unknown\n\
+             CANDIDATE% id=CAND-01 category=auto target=unmapped-feature title=generic_placeholder\n\
+             ATTACK_ATOM% id=ATOM-01 lane=identity_engine kind=surface category=auth target=/old label=old_atom bridge_keys=identity claim=OBL-01 confidence=signal",
+        );
+        state.current_stage = "stage3".to_string();
+        state.record_agent_message(
+            "CLAIM% id=ID-01 category=auth target=routes/changePassword.ts severity=high confidence=high title=password_change_bypass reason=missing_current_password impact=account_takeover next=authorized_vs_attacker_password_change\n\
+             CLAIM% id=INJ-CAND-01 category=injection target=routes/search.ts severity=critical confidence=high title=search_sqli reason=raw_sql impact=data_leak next=union_select_control",
+        );
+
+        let mut workflow =
+            TriLaneWorkflow::new_from_stage("audit target".to_string(), "stage4")
+                .expect("stage4 workflow");
+        let WorkflowAction::Submit(prompt) = workflow.begin(&state) else {
+            panic!("expected stage4 prompt");
+        };
+
+        assert!(prompt
+            .prompt
+            .contains("MERGE_PACKET% mode=s4_handoff phase=s4_auth_authz_session_controls"));
+        assert!(prompt.prompt.contains("CLAIM% id=ID-01"));
+        assert!(!prompt.prompt.contains("CLAIM% id=INJ-CAND-01"));
+        assert!(!prompt.prompt.contains("CLAIM% id=OBL-01"));
+        assert!(!prompt.prompt.contains("CANDIDATE% id=CAND-01"));
+        assert!(!prompt.prompt.contains("ATTACK_ATOM% id=ATOM-01"));
+        assert!(prompt.prompt.contains("cleanup=<read-only|restored|disposable|not-restored:reason>"));
+        assert!(prompt.prompt.contains("exactly one VERIFY%, REJECTED%, or S4_SKIP%"));
+    }
+
+    #[test]
+    fn s4_regression_sweep_is_late_blackbox_only() {
+        let mut state = RunbookState::default();
+        state.start_turn("audit target", AuditMode::Lab);
+        state.current_stage = "stage3".to_string();
+        state.record_agent_message(
+            "CLAIM% id=ID-01 category=auth target=routes/changePassword.ts severity=high confidence=high title=password_change_bypass reason=missing_current_password impact=account_takeover next=authorized_vs_attacker_password_change",
+        );
+
+        let mut workflow =
+            TriLaneWorkflow::new_from_stage("audit target".to_string(), "stage4")
+                .expect("stage4 workflow");
+        workflow.current = workflow
+            .phases
+            .iter()
+            .position(|phase| phase.id == "s4_regression_sweep")
+            .expect("regression sweep phase");
+        let WorkflowAction::Submit(prompt) = workflow.begin(&state) else {
+            panic!("expected s4 regression prompt");
+        };
+
+        assert!(prompt.prompt.contains("origin=late-blackbox"));
+        assert!(prompt.prompt.contains("Do not re-probe represented families"));
+        assert!(prompt
+            .prompt
+            .contains("MERGE_PACKET% mode=s4_handoff phase=s4_regression_sweep"));
     }
 
     #[test]
@@ -270,6 +459,14 @@
             .lanes
             .iter()
             .all(|lane| lane.prompt.contains("only machine-readable marker you may emit is CLAIM%")));
+        assert!(batch
+            .lanes
+            .iter()
+            .all(|lane| lane.prompt.contains("AGENT_RULES%")));
+        assert!(batch
+            .lanes
+            .iter()
+            .all(|lane| lane.prompt.contains("Act as a candidate lane")));
         for lane in &batch.lanes {
             for (head, tail) in [
                 ("REJECTED", "%"),
@@ -389,13 +586,16 @@
         assert!(!injection.prompt.contains("max_items="));
         assert!(injection.prompt.contains("SOURCE_FACT% id=S1-OBL-03"));
         assert!(injection.prompt.contains("line_window:routes/search.ts:29"));
-        assert!(injection.prompt.contains("Consume SOURCE_PACKET% first"));
+        assert!(injection
+            .prompt
+            .contains("Consume SOURCE_PACKET% and SCANNER_PACKET% first"));
         assert!(injection
             .prompt
             .contains("only machine-readable marker you may emit is CLAIM%"));
-        assert!(injection.prompt.contains("reason=<short-source-reason>"));
-        assert!(injection.prompt.contains("next=<s4-check>"));
-        assert!(injection.prompt.contains("Do not prove, reject, dedupe"));
+        assert!(injection.prompt.contains("SCANNER_PACKET%"));
+        assert!(injection.prompt.contains("reason=<source->sink-short-proof>"));
+        assert!(injection.prompt.contains("next=poc:<stable-poc-unit>"));
+        assert!(injection.prompt.contains("Micro-verify"));
 
         let identity = batch
             .lanes
@@ -410,6 +610,33 @@
         assert!(!identity
             .prompt
             .contains("SOURCE_FACT% id=S1-OBL-04 category=authz target=unmapped-feature"));
+    }
+
+    #[test]
+    fn s1_prompt_receives_scanner_context_without_new_output_schema() {
+        let mut state = RunbookState::default();
+        state.start_turn("Penetration test target, source code is in /no/such/root", AuditMode::Lab);
+        let mut workflow = TriLaneWorkflow::new(state.objective.clone());
+        let WorkflowAction::Submit(prompt) = workflow.submit_current(&state, false) else {
+            panic!("expected s0 submit");
+        };
+
+        assert!(!prompt.prompt.contains("SCANNER_CONTEXT%"));
+
+        let mut workflow = TriLaneWorkflow::new(state.objective.clone());
+        while workflow.phases[workflow.current].id != "s1_route_surface" {
+            workflow.current += 1;
+        }
+        let WorkflowAction::Submit(prompt) = workflow.submit_current(&state, false) else {
+            panic!("expected s1 submit");
+        };
+        assert!(prompt.prompt.contains("SCANNER_CONTEXT%"));
+        assert!(prompt.prompt.contains("AGENT_RULES%"));
+        assert!(prompt.prompt.contains("Act as a security indexer for S2"));
+        assert!(prompt.prompt.contains("SCANNER_PACKET% status=disabled"));
+        assert!(prompt
+            .prompt
+            .contains("Convert high-value SCANNER_FACT% lines into existing READ_TARGET% or OBLIGATION% rows"));
     }
 
     #[test]
@@ -475,6 +702,29 @@
         assert!(prompt.contains("Emit only new residual CLAIM% lines"));
         assert!(prompt.contains("only machine-readable marker you may emit is CLAIM%"));
         assert!(prompt.contains("SOURCE_PACKET% lane=quick_hits_engine"));
+        assert!(prompt.contains("SCANNER_PACKET%"));
+    }
+
+    #[test]
+    fn s3_and_s4_packets_carry_poc_units() {
+        let mut state = RunbookState::default();
+        state.start_turn("audit target", AuditMode::Lab);
+        state.record_agent_message(
+            "CLAIM% id=ID-001 category=session target=lib/jwt.ts:10 severity=high confidence=high title=JWT none algorithm reason=source->sink: jwt verify accepts none impact=auth_bypass next=poc:jwt-none\n\
+             CLAIM% id=ID-002 category=session target=lib/jwt.ts:10 severity=high confidence=high title=JWT HS256 confusion reason=source->sink: key confusion impact=auth_bypass next=poc:jwt-hs256-confusion",
+        );
+
+        let s3 = super::compact_s3_claim_pool(&state, 20);
+        assert!(s3.contains("next=poc:jwt-none"));
+        assert!(s3.contains("next=poc:jwt-hs256-confusion"));
+
+        state.record_agent_message(
+            "CLAIM% id=ID-001 category=session target=lib/jwt.ts:10 status=seed level=signal severity=high title=JWT none algorithm reason=source impact=auth_bypass next=poc:jwt-none\n\
+             CLAIM% id=ID-002 category=session target=lib/jwt.ts:10 status=seed level=signal severity=high title=JWT HS256 confusion reason=source impact=auth_bypass next=poc:jwt-hs256-confusion",
+        );
+        let s4 = super::compact_s4_handoff_packet(&state, "s4_auth_authz_session_controls", 20);
+        assert!(s4.contains("next=poc:jwt-none"));
+        assert!(s4.contains("next=poc:jwt-hs256-confusion"));
     }
 
     #[test]
@@ -578,7 +828,7 @@
     }
 
     #[test]
-    fn s5_draft_report_is_followed_by_adversarial_review_lane() {
+    fn s5_draft_poc_bundle_is_followed_by_advisory_review_lane() {
         let mut state = RunbookState::default();
         state.start_turn("audit target", AuditMode::Lab);
         let mut workflow = TriLaneWorkflow::new("audit target".to_string());
@@ -597,17 +847,19 @@
         assert_eq!(batch.phase_id, "s5_adversarial_review");
         assert_eq!(batch.stage_id, "stage5");
         assert_eq!(batch.lanes.len(), 1);
-        assert_eq!(batch.lanes[0].lane_id, "final_report_review");
-        assert!(batch.lanes[0].prompt.contains("FINAL_REPORT_DRAFT%"));
+        assert_eq!(batch.lanes[0].lane_id, "poc_bundle_review");
+        assert!(batch.lanes[0].prompt.contains("FINAL_POC_BUNDLE_DRAFT%"));
         assert!(batch.lanes[0].prompt.contains("REVIEW_REPORT%"));
         assert!(batch.lanes[0].prompt.contains("Do not run tools"));
-        assert!(batch.lanes[0].prompt.contains("bounded advisory report reviewer"));
+        assert!(batch.lanes[0].prompt.contains("bounded advisory PoC reviewer"));
         assert!(batch.lanes[0]
             .prompt
-            .contains("recommend downgrade/rewrite/needs-poc instead"));
+            .contains("recommend generated-not-verified or needs-poc instead"));
         assert!(batch.lanes[0]
             .prompt
             .contains("one attempted payload path failed"));
+        assert!(batch.lanes[0].prompt.contains("AGENT_RULES%"));
+        assert!(batch.lanes[0].prompt.contains("bounded reviewer"));
     }
 
     #[test]
@@ -616,7 +868,7 @@
         state.start_turn("audit target", AuditMode::Lab);
         state.record_subagent_lane(crate::runbook::RunbookLaneUpdate {
             stage: "stage5",
-            lane_id: "final_report_review",
+            lane_id: "poc_bundle_review",
             status: "done",
             claim_count: Some(0),
             candidate_count: Some(0),
@@ -624,7 +876,7 @@
             summary: "review complete",
         });
         state.record_agent_message(
-            "REVIEW% action=drop target=VULN-009 reason=duplicate confidence=high\nREVIEW_REPORT% lane=final_report_review status=done comments=1 critical=1 note=drop duplicate",
+            "REVIEW% action=drop target=VULN-009 reason=duplicate confidence=high\nREVIEW_REPORT% lane=poc_bundle_review status=done comments=1 critical=1 note=drop duplicate",
         );
 
         let mut workflow = TriLaneWorkflow::new("audit target".to_string());
@@ -645,7 +897,7 @@
         assert!(prompt.prompt.contains("Preserve recall"));
         assert!(prompt
             .prompt
-            .contains("failed payload variant or failed alternate exploit chain"));
+            .contains("replacement canonical POC% set"));
     }
 
     #[test]
@@ -654,7 +906,7 @@
         state.start_turn("audit target", AuditMode::Lab);
         state.record_subagent_lane(crate::runbook::RunbookLaneUpdate {
             stage: "stage5",
-            lane_id: "final_report_review",
+            lane_id: "poc_bundle_review",
             status: "done",
             claim_count: Some(0),
             candidate_count: Some(0),
@@ -677,6 +929,6 @@
         assert_eq!(prompt.phase_id, "s5_final_revision");
         assert!(prompt.prompt.contains("REVIEW_CONTEXT%"));
         assert!(prompt.prompt.contains(
-            "REVIEW_REPORT% lane=final_report_review status=missing comments=0 critical=0"
+            "REVIEW_REPORT% lane=poc_bundle_review status=missing comments=0 critical=0"
         ));
     }

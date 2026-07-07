@@ -12,7 +12,14 @@ fn audit_mode_user_input(audit_mode: &AuditMode, text: &str) -> String {
     let control = format!(
         "AUDIT_MODE% {}\n\
          {access}\n\
-				         MODE_RULES% Run the TriLane source-aware audit with backend workflow control. S1 is led by the root model, but S1 is a fast security indexer rather than a deep audit: use route registration, rg, file lists, and representative high-risk helpers to emit compact useful SURFACE%/OBLIGATION% ledgers plus a tightly bounded READ_TARGET% task list. S1 must cover route/API, auth/session/JWT, object ownership, source/sink, and config/docs/debug indexes before stopping. In S1, keep visible prose minimal: do not narrate routine planning with phrases like \"Let me\", \"I need\", or \"Now I\". Do not use marker names as Markdown headings; marker lines must be bare machine-readable lines. Marker fields must be clean: category is one taxonomy token only; use target/source/path/sink/debt/reason fields instead of packing multiple facts into category or target. SURFACE_BUDGET% stage=s1 total_max=90 per_category_max=6 role=map_not_task. READ_TARGET% tells S2 exactly which source path/anchor/follow file each expert should read first plus question, stop_when, and broaden_after; it is not a vulnerability conclusion and not an exhaustive checklist. READ_TARGET_BUDGET% stage=s1 total_max=25 per_lane_max=5 priority=high_only dedupe=path+kind+category. If more interesting targets exist, emit OBLIGATION% debt instead of extra READ_TARGET% lines. Do not deep-read every handler in S1 and do not spend S1 proving vulnerabilities. Carry unresolved source-sink depth and fine-grained hypothesis expansion into S2. Never end the turn after saying \"now emitting the ledger\" or \"I have enough information\"; emit the useful ledger lines immediately in the same assistant message. In S2, do not spawn subagents yourself: the TriLane backend workflow scheduler will launch five workflow-owned core child engines for identity_engine, injection_engine, ingress_engine, logic_engine, and config_engine with bounded concurrency and retry/backoff, join their CLAIM% ledgers, then launch optional quick_hits_engine as a residual recovery lane using the core output. The first five engines own the hard-gated candidate discovery; quick_hits_engine is lightweight and must not block S3 if empty or failed. S3 receives a RUNBOOK_CONTEXT% merge packet built from the claim pool. Coverage should flow into concise CLAIM% candidates instead of marker spam. Use generic CVE-prior families as a checklist, not as target-specific answers. S2 lanes emit CLAIM% candidates only and no other machine-readable rows. S3 merges and plans verification; S4 owns probes, controls, verification, and rejection; S5 owns final PoCs/findings. S3 is mandatory before S4: emit RUNBOOK% S3 Summary with merge/FoA/debt ledger before any RUNBOOK% S4 Fuzz. S2/S3 claims are provisional: do not call the audit complete or publish the final report until RUNBOOK% S4 Fuzz records targeted variant probing or evidence-backed skips, then RUNBOOK% S5 Verify emits canonical final FINDING% entries.",
+         MODE_RULES% Run the TriLane source-aware audit with backend workflow control.\n\
+         - S1 is a fast security indexer, not a deep audit. Emit compact SURFACE%/OBLIGATION% ledgers plus tightly bounded READ_TARGET% tasks for S2.\n\
+         - S1 marker fields must be clean: category is one taxonomy token; use target/source/path/sink/debt/reason for details.\n\
+         - S2 is backend-scheduled. Do not spawn subagents yourself. The five core lanes emit CLAIM% candidates only; quick_hits_engine is optional residual recovery.\n\
+         - S3 receives a RUNBOOK_CONTEXT% merge packet, canonicalizes CLAIM% families, and plans verification. S3 must run before S4.\n\
+         - S4 owns probes, controls, verification, rejection, and evidence-backed skips.\n\
+         - S5 owns final PoC packaging. Do not call the audit complete or publish final PoCs until S5 emits canonical POC% entries.\n\
+         - Use generic CVE-prior families as a coverage checklist, not as target-specific answers.",
         audit_mode.as_marker()
     );
     format!("{control}\n\nUSER_OBJECTIVE%\n{text}")
@@ -608,10 +615,11 @@ async fn append_turn_completed_message(app: &AppHandle, status: &str, runbook: &
         runbook.final_findings.len()
     ));
     if incomplete {
-        lines
-            .push("RUNBOOK% blocked before final report; check Scan watchdog evidence".to_string());
+        lines.push(
+            "RUNBOOK% blocked before final PoC bundle; check Scan watchdog evidence".to_string(),
+        );
     } else if !runbook.final_findings.is_empty() {
-        lines.push("REPORT% final report is ready in Findings".to_string());
+        lines.push("POC_BUNDLE% final PoC bundle is ready in Findings".to_string());
     } else {
         lines.push("REPORT% no final findings were produced".to_string());
     }

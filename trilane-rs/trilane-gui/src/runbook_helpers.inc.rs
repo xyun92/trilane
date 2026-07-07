@@ -35,9 +35,16 @@ fn marker_value(line: &str, key: &str) -> Option<String> {
     let needle = format!("{key}=");
     let start = line.find(&needle)? + needle.len();
     let rest = &line[start..];
+    let trimmed = rest.trim_start();
+    if let Some(value) = quoted_marker_value(trimmed) {
+        return clean_marker_value(&value);
+    }
     let keys = [
         " id=",
         " lane=",
+        " mode=",
+        " root=",
+        " facts=",
         " category=",
         " area=",
         " feature=",
@@ -79,6 +86,7 @@ fn marker_value(line: &str, key: &str) -> Option<String> {
         " attack=",
         " obligation=",
         " priority=",
+        " origin=",
         " cve_prior=",
         " note=",
         " summary=",
@@ -101,8 +109,10 @@ fn marker_value(line: &str, key: &str) -> Option<String> {
         " root_cause=",
         " precondition=",
         " impact=",
+        " next=",
         " positive=",
         " negative=",
+        " verification=",
         " merge_into=",
         " merged_into=",
         " surface=",
@@ -115,6 +125,12 @@ fn marker_value(line: &str, key: &str) -> Option<String> {
         " atom_ids=",
         " verify_plan=",
         " plan=",
+        " replay=",
+        " expected=",
+        " cleanup=",
+        " finding=",
+        " evidence_refs=",
+        " refs=",
         " score=",
     ];
     let end = keys
@@ -122,7 +138,33 @@ fn marker_value(line: &str, key: &str) -> Option<String> {
         .filter_map(|candidate| rest.find(candidate))
         .min()
         .unwrap_or(rest.len());
-    let value = rest[..end]
+    clean_marker_value(rest[..end].trim())
+}
+
+fn quoted_marker_value(rest: &str) -> Option<String> {
+    let quote = rest.chars().next()?;
+    if quote != '"' && quote != '\'' {
+        return None;
+    }
+    let mut escaped = false;
+    let mut value = String::new();
+    for ch in rest[quote.len_utf8()..].chars() {
+        if escaped {
+            value.push(ch);
+            escaped = false;
+        } else if ch == '\\' {
+            escaped = true;
+        } else if ch == quote {
+            return Some(value);
+        } else {
+            value.push(ch);
+        }
+    }
+    None
+}
+
+fn clean_marker_value(value: &str) -> Option<String> {
+    let value = value
         .trim()
         .trim_matches('`')
         .trim()

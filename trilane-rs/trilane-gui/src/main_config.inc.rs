@@ -71,7 +71,7 @@ fn trilane_agent_cli_overrides(audit_mode: &AuditMode) -> Vec<(String, toml::Val
         (
             "features.multi_agent_v2.subagent_usage_hint_text".to_string(),
             toml::Value::String(
-                "You are a focused TriLane audit subagent. Stay within your assigned domain, emit SURFACE%/CANDIDATE%/CLAIM%/FINDING% markers with concrete evidence, and return a compact ledger to the parent."
+                "You are a focused TriLane workflow subagent. Follow the lane prompt exactly, stay within the assigned stage and domain, emit only the machine-readable marker type allowed by that lane, keep source/tool reads bounded, and avoid planning prose or self-debate."
                     .to_string(),
             ),
         ),

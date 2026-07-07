@@ -334,6 +334,22 @@ fn verification_status(finding: &RunbookFinding) -> &'static str {
     )
     .to_ascii_lowercase();
     let has_source = !finding.code_path.trim().is_empty();
+    if contains_any(
+        &haystack,
+        &["verification=needs-poc", "verification: needs-poc"],
+    ) {
+        return "needs-poc";
+    }
+    if contains_any(
+        &haystack,
+        &[
+            "generated-not-verified",
+            "verification=generated_not_verified",
+            "verification: generated_not_verified",
+        ],
+    ) {
+        return "generated-not-verified";
+    }
     let has_poc = !finding.payload.trim().is_empty()
         || contains_any(
             &haystack,
@@ -364,6 +380,7 @@ fn verification_rank(status: &str) -> usize {
         "publishable" => 6,
         "weaponized" => 5,
         "verified" => 4,
+        "generated-not-verified" => 3,
         "runtime-signal" | "corroborated" => 3,
         "source-backed" | "anchored" => 2,
         "needs-poc" | "armed" | "running" => 1,

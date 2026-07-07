@@ -127,6 +127,7 @@ fn classify_stage(text: &str, output: Option<&str>) -> &'static str {
             "validator",
             "clean sandbox",
             "validate",
+            "poc%",
         ],
     ) {
         "stage5"

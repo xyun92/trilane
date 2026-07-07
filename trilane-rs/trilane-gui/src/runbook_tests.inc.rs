@@ -239,7 +239,7 @@
     }
 
     #[test]
-    fn final_report_contains_payload_and_dedupe_counts() {
+    fn poc_bundle_contains_replay_and_dedupe_counts() {
         let mut state = RunbookState::default();
         state.start_turn("test target", AuditMode::Safe);
         state.record_agent_message(
@@ -248,8 +248,32 @@
         state.complete();
 
         let report = state.final_report_markdown();
-        assert!(report.contains("Final findings: 1"));
+        assert!(report.contains("# TriLane PoC Bundle"));
+        assert!(report.contains("PoC entries: 1"));
         assert!(report.contains("curl -X POST /rest/user/change-password"));
+    }
+
+    #[test]
+    fn poc_marker_materializes_generated_not_verified_entry() {
+        let mut state = RunbookState::default();
+        state.start_turn("test target", AuditMode::Lab);
+        state.record_agent_message(
+            "POC% id=POC-001 finding=AUTH-01 severity=high category=auth code_path=routes/changePassword.ts target=/rest/user/change-password precondition=authenticated_user replay=curl -X POST /rest/user/change-password expected=HTTP_200_password_changed impact=account_takeover verification=generated-not-verified cleanup=none evidence_refs=ID-01,S4_SKIP-01",
+        );
+        state.complete();
+
+        assert_eq!(state.final_findings.len(), 1);
+        assert_eq!(
+            state.final_findings[0].verification_status,
+            "generated-not-verified"
+        );
+        assert!(state.final_findings[0]
+            .payload
+            .contains("curl -X POST /rest/user/change-password"));
+        let report = state.final_report_markdown();
+        assert!(report.contains("Generated-not-verified PoCs: 1"));
+        assert!(report.contains("Replay:"));
+        assert!(report.contains("verification=generated-not-verified"));
     }
 
     #[test]
@@ -661,7 +685,7 @@
         assert_eq!(state.stats.confirmed, 0);
 
         let report = state.final_report_markdown();
-        assert!(report.contains("Final findings: 0"));
+        assert!(report.contains("PoC entries: 0"));
         assert!(!report.contains("### VULN-001"));
     }
 
@@ -685,6 +709,61 @@
         assert_eq!(state.status, RunbookStatus::Completed);
         assert_eq!(state.final_findings.len(), 1);
         assert_eq!(state.stats.confirmed, 1);
+    }
+
+    #[test]
+    fn poc_units_keep_same_root_claims_separate() {
+        let mut state = RunbookState::default();
+        state.start_turn("test target", AuditMode::Lab);
+        state.record_agent_message(
+            "CLAIM% id=ID-001 category=session target=lib/jwt.ts:10 severity=high confidence=high title=JWT none reason=source->sink: jwt verifier impact=auth_bypass next=poc:jwt-none\n\
+             CLAIM% id=ID-002 category=session target=lib/jwt.ts:10 severity=high confidence=high title=JWT HS256 reason=source->sink: jwt verifier impact=auth_bypass next=poc:jwt-hs256-confusion",
+        );
+
+        assert_eq!(state.claims.len(), 2);
+        assert!(state
+            .claims
+            .iter()
+            .any(|claim| claim.precondition == "poc:jwt-none"));
+        assert!(state
+            .claims
+            .iter()
+            .any(|claim| claim.precondition == "poc:jwt-hs256-confusion"));
+    }
+
+    #[test]
+    fn poc_marker_parser_preserves_replay_and_sanitizes_report() {
+        let mut state = RunbookState::default();
+        state.start_turn(
+            "Penetration test juice-shop\nRESUME_RUN_CONTEXT%\n/Users/wuxuyun/.trilane/runs/old/stage2/runbook.json",
+            AuditMode::Lab,
+        );
+        state.record_workflow_phase("stage4", "S4 Fuzz");
+        state.record_agent_message(
+            "PROBE% id=INJ-001 result=HTTP 200 returned admin token\n\
+             CONTROL% id=INJ-001 negative=clean login rejected",
+        );
+        state.record_workflow_phase("stage5", "S5 Verify");
+        state.record_agent_message(
+            "POC% id=POC-001 finding=INJ-001 category=injection target=/rest/user/login severity=critical verification=verified replay=\"curl -s -H \\\"Authorization: Bearer token\\\" -d '{\\\"email\\\":\\\"a@b.c\\\",\\\"password\\\":\\\"x\\\"}' http://127.0.0.1:3000/rest/user/login\" expected=\"admin token\" cleanup=none",
+        );
+
+        let finding = state
+            .findings
+            .iter()
+            .find(|finding| finding.candidate_id.as_deref() == Some("INJ-001"))
+            .expect("poc finding");
+        assert!(!finding.title.contains("POC%"));
+        assert_eq!(finding.title, "injection PoC for /rest/user/login");
+        assert!(finding.payload.contains("Authorization: Bearer token"));
+        assert!(finding.payload.contains("\"email\":\"a@b.c\""));
+        assert_eq!(finding.evidence_state, "verified");
+
+        let report = state.final_report_markdown();
+        assert!(!report.contains("RESUME_RUN_CONTEXT%"));
+        assert!(!report.contains("/.trilane/runs/"));
+        assert!(!report.contains("stage2/runbook.json"));
+        assert!(!report.contains("### VULN-001 - POC%"));
     }
 
     #[test]

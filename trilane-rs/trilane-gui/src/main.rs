@@ -6,6 +6,7 @@ mod mimo_adapter;
 mod runbook;
 mod runbook_claims;
 mod runbook_finalize;
+mod source_scanner;
 mod state_store;
 mod transcript_log;
 mod workflow;

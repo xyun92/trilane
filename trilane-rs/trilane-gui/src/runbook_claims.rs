@@ -202,6 +202,9 @@ pub struct ClaimSeed<'a> {
 }
 
 pub fn canonical_claim_fingerprint(seed: &ClaimSeed<'_>) -> String {
+    if let Some(unit) = poc_unit_from_text(seed.precondition) {
+        return format!("{}:poc:{}", normalize_token(seed.category), unit);
+    }
     let location_values = [seed.code_path, seed.target, seed.root_cause];
     let location = first_non_empty(&location_values);
     let cause_values = [seed.root_cause, seed.title];
@@ -212,6 +215,57 @@ pub fn canonical_claim_fingerprint(seed: &ClaimSeed<'_>) -> String {
         normalize_location(location),
         normalize_token(cause)
     )
+}
+
+pub fn poc_unit_from_text(value: &str) -> Option<String> {
+    value
+        .split(|ch: char| ch.is_whitespace() || matches!(ch, ',' | ';' | '"' | '\''))
+        .find_map(|part| part.trim().strip_prefix("poc:"))
+        .map(normalize_poc_unit)
+        .filter(|unit| !unit.is_empty() && unit != "unknown")
+}
+
+pub fn derive_poc_unit(category: &str, title: &str, target: &str, next: &str) -> String {
+    if let Some(unit) = poc_unit_from_text(next) {
+        return unit;
+    }
+    let target = normalize_location(target);
+    let title = normalize_token(title);
+    let mut unit = normalize_poc_unit(&format!(
+        "{}-{}-{}",
+        normalize_token(category),
+        target,
+        title
+    ));
+    if unit.len() > 96 {
+        unit.truncate(96);
+        unit = unit.trim_end_matches('-').to_string();
+    }
+    if unit.trim_matches('-').is_empty() {
+        "unknown-poc-unit".to_string()
+    } else {
+        unit
+    }
+}
+
+fn normalize_poc_unit(value: &str) -> String {
+    let mut out = String::new();
+    let mut last_dash = false;
+    for ch in value.chars().flat_map(char::to_lowercase) {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch);
+            last_dash = false;
+        } else if matches!(ch, '-' | '_' | '/' | ':' | '.') && !last_dash {
+            out.push('-');
+            last_dash = true;
+        }
+    }
+    let out = out.trim_matches('-').to_string();
+    if out.is_empty() {
+        "unknown".to_string()
+    } else {
+        out
+    }
 }
 
 pub fn infer_evidence_level(

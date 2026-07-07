@@ -270,7 +270,9 @@ fn phase_satisfied(
                 || state.stats.coverage_mapped > baseline.coverage_mapped
         }
         PhaseGate::S2Lane => state.s2_required_lanes_complete() && state.s2_quick_hits_finished(),
-        PhaseGate::S3Merge => has_runbook_marker(state, "S3"),
+        PhaseGate::S3Merge => {
+            has_runbook_marker(state, "S3") && s3_has_clean_handoff(state)
+        }
         PhaseGate::S4Probe => {
             if state.claims.is_empty() && state.findings.is_empty() {
                 return has_runbook_marker(state, "S4");
@@ -293,7 +295,7 @@ fn phase_satisfied(
                     || state.claims.is_empty())
         }
         PhaseGate::S5Review => state.lanes.iter().any(|lane| {
-            lane.stage == "stage5" && lane.lane_id == "final_report_review" && lane.status == "done"
+            lane.stage == "stage5" && lane.lane_id == "poc_bundle_review" && lane.status == "done"
         }),
         PhaseGate::S5FinalRevision => has_s5_final_revision_marker(state),
     }
@@ -307,7 +309,10 @@ fn max_repairs_for_phase(_phase: &WorkflowPhase, _state: &RunbookState) -> usize
     MAX_REPAIRS_PER_PHASE
 }
 
-fn phase_repair_instruction(_phase: &WorkflowPhase, _state: &RunbookState) -> String {
+fn phase_repair_instruction(phase: &WorkflowPhase, _state: &RunbookState) -> String {
+    if phase.gate == PhaseGate::S3Merge {
+        return "\nWORKFLOW_REPAIR% S3 did not produce a clean output-only claim handoff or it used commands. Do not call tools. Re-read only RUNBOOK_CONTEXT, then emit RUNBOOK% S3 Summary plus bare CLAIM%/MERGE%/CHAIN_CANDIDATE%/BREADTH% rows. Reuse input ids exactly and do not emit DUPLICATE%, PROBE%, CONTROL%, VERIFY%, REJECTED%, FINDING%, markdown tables, or prose.\n".to_string();
+    }
     "\nWORKFLOW_REPAIR% The previous turn did not satisfy this phase contract. Do not apologize. Emit the missing machine-readable ledger lines now, then continue only within this same phase.\n".to_string()
 }
 
@@ -374,6 +379,22 @@ fn has_service_status_marker(state: &RunbookState) -> bool {
         || has_marker_text(state, "service_status% blocked")
 }
 
+fn s3_has_clean_handoff(state: &RunbookState) -> bool {
+    let has_live_stage2_input = state.claims.iter().any(|claim| {
+        claim.stage == "stage2"
+            && claim_status_is_live(claim.status.as_marker())
+            && claim_id_is_lane_claim(&claim.id)
+    });
+    if !has_live_stage2_input {
+        return true;
+    }
+    state.claims.iter().any(|claim| {
+        claim.stage == "stage3"
+            && claim_status_is_live(claim.status.as_marker())
+            && claim_id_is_lane_claim(&claim.id)
+    })
+}
+
 fn evidence_text(evidence: &crate::runbook::RunbookEvidence) -> String {
     format!(
         "{}\n{}",
@@ -401,7 +422,8 @@ fn phase_prompt(
     } else {
         String::new()
     };
-    let context = phase_context(phase, state);
+    let context = phase_context(phase, state, objective);
+    let agent_rules = stage_agent_rules(phase.stage_code, phase.id);
     format!(
         "AUDIT_MODE% TRILANE\n\
          WORKFLOW% id=trilane-workflow step={index}/{total} phase={} stage={} repair={}\n\
@@ -410,14 +432,65 @@ fn phase_prompt(
          {repair}\n\
          GLOBAL_CONTRACT%\n\
          - This is a backend-controlled workflow. Stay inside this phase; do not jump ahead.\n\
-         - Do not emit a final report before S5.\n\
-         - Use concrete source paths, routes, commands, payloads, and controls. No vibes.\n\
-         - Emit compact machine-readable markers only for state the backend must persist. CLAIM% and FINDING% are primary; SURFACE% should stay bounded and useful.\n\
+         - Do not emit final PoCs before S5.\n\
+         - Use concrete source paths, routes, commands, replay steps, expected signals, and controls. No vibes.\n\
+         - Emit compact machine-readable markers only for state the backend must persist. CLAIM%, POC%, and FINDING% are primary; SURFACE% should stay bounded and useful.\n\
          - Use these categories when applicable: auth, authz, session, injection, xss, cors_headers_tls, ssrf_redirect, file_upload_xxe, traversal_lfi, state_invariant_abuse, anti_automation_bypass, rate_limit, secrets_config, observability_leak, crypto.\n\
          - Recover broad web application coverage: auth bypass, object ownership, mass assignment, SQL/NoSQL/template/command injection, unsafe eval/sandbox, parser abuse, XXE/YAML/zip, traversal/LFI, SSRF/open redirect, stored/reflected/DOM/header XSS, CORS/header trust flaws, JWT/key/algorithm flaws, weak crypto, exposed APIs/config/metrics/logs/files, state invariant abuse, recovery/anti-automation/rate-limit gaps.\n\n\
+         AGENT_RULES%\n{}\n\n\
          PHASE_CONTRACT%\n{}\n\n\
          PHASE_TASK%\n{}\n{}",
-        phase.id, phase.stage_code, is_repair, phase.title, objective.trim(), phase.contract, phase.body
+        phase.id, phase.stage_code, is_repair, phase.title, objective.trim(), agent_rules, phase.contract, phase.body
         , context
     )
+}
+
+fn stage_agent_rules(stage_code: &str, phase_id: &str) -> &'static str {
+    match stage_code {
+        "S0" => {
+            "- Act as an admission gate, not an auditor: scope, source path, service state, and project shape only.\n\
+             - If startup or access is blocked, record the exact blocker and stop S0 cleanly instead of guessing vulnerabilities.\n\
+             - Keep prose short; use commands to establish facts, then emit the required ledger markers."
+        }
+        "S1" => {
+            "- Act as a security indexer for S2, not a deep-proof agent.\n\
+             - Prefer cheap global indexes and scanner facts over whole-repo reading; convert them into bounded read work and obligations.\n\
+             - Do not self-debate or promise future ledgers; emit the actual machine-readable ledger before ending the phase."
+        }
+        "S2" => {
+            "- Act as a candidate lane, not a verifier or report writer.\n\
+             - Read the supplied packets first, then only decisive source windows inside your assigned domain.\n\
+             - Keep uncertainty in confidence and next=poc units; do not add summaries, final PoCs, or cross-lane rewrites."
+        }
+        "S3" => {
+            "- Act as an output-only canonicalizer: no tools, no new source reads, no probing, and no fresh audit.\n\
+             - Preserve one exploitable action as one PoC unit; broad shared root causes are not enough to merge distinct exploit paths.\n\
+             - If a claim is weak, pass it forward with honest status instead of silently dropping a supported family."
+        }
+        "S4" => {
+            "- Act as a targeted verifier for the S3 handoff, not a broad explorer.\n\
+             - For each in-scope family, produce a positive check, a control, a rejection, or a source-backed skip.\n\
+             - Keep probes reversible and scoped; avoid long planning narration before the first useful action."
+        }
+        "S5" if phase_id == "s5_adversarial_review" => {
+            "- Act as a bounded reviewer of the supplied bundle only.\n\
+             - Do not inspect source, run tools, or discover new vulnerabilities; flag duplicate, missing, or unsupported PoC rows.\n\
+             - Prefer downgrade or rewrite advice over deletion when the ledger still supports a credible family."
+        }
+        "S5" if phase_id == "s5_final_revision" => {
+            "- Act as an output-only final editor.\n\
+             - Apply only ledger-supported review comments and preserve credible families with honest verification labels.\n\
+             - Do not run tools, inspect source, or append prose that the backend cannot parse."
+        }
+        "S5" => {
+            "- Act as a PoC packager, not a fresh auditor.\n\
+             - Keep one replayable PoC row per surviving vulnerability family with clean fields and evidence references.\n\
+             - If proof is incomplete but source impact is credible, downgrade verification honestly instead of deleting the family."
+        }
+        _ => {
+            "- Stay inside the assigned workflow phase.\n\
+             - Emit only state the backend needs to persist.\n\
+             - Avoid routine planning prose and self-debate."
+        }
+    }
 }
