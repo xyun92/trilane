@@ -181,7 +181,10 @@ fn add_matches(
     if contains_any(
         lower,
         &[
+            "dangerouslysetinnerhtml",
             "innerhtml",
+            "ng-bind-html",
+            "v-html",
             "bypasssecuritytrusthtml",
             "jsonp",
             "res.render",
@@ -234,6 +237,24 @@ fn add_matches(
             "weak-md5-hash",
             "source->sink: MD5 hash use",
             "password-md5-hash",
+        ));
+    }
+    if contains_any(
+        lower,
+        &[
+            "cookieparser",
+            "cookie-parser",
+            "express-session",
+            "sessionsecret",
+        ],
+    ) {
+        push(fact(
+            "config_engine",
+            "secrets_config",
+            target.clone(),
+            "cookie-session-secret",
+            "source->sink: cookie/session secret config",
+            "cookie-or-session-secret",
         ));
     }
     if contains_any(
@@ -317,6 +338,25 @@ fn add_matches(
             "public-file-log-docs",
             "source->sink: public observability/config surface",
             "public-config-docs-logs",
+        ));
+    }
+    if contains_any(
+        lower,
+        &[
+            "errorhandler(",
+            "err.stack",
+            "/metrics",
+            "swagger-ui",
+            "openapi",
+        ],
+    ) {
+        push(fact(
+            "config_engine",
+            "observability_leak",
+            target.clone(),
+            "debug-docs-metrics-surface",
+            "source->sink: debug/docs/metrics exposure",
+            "debug-docs-or-metrics",
         ));
     }
     if contains_any(
@@ -462,13 +502,26 @@ mod tests {
             "serveIndex('ftp')\ncreateHash('md5').update(password)\nres.redirect(req.query.to)\n",
         )
         .unwrap();
+        fs::write(
+            root.join("routes/app.ts"),
+            "app.use(errorhandler())\napp.use('/api-docs', swaggerUi.serve)\ncookieParser('kekse')\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("routes/view.tsx"),
+            "return <div dangerouslySetInnerHTML={{ __html: req.query.html }} />\n",
+        )
+        .unwrap();
 
-        let facts = scan_root(&root, None, 20);
+        let facts = scan_root(&root, None, 30);
         let titles = facts.iter().map(|fact| fact.title).collect::<Vec<_>>();
         assert!(titles.contains(&"sql-injection-source-sink"));
         assert!(titles.contains(&"jwt-secret-material"));
         assert!(titles.contains(&"weak-md5-hash"));
         assert!(titles.contains(&"file-or-directory-exposure"));
+        assert!(titles.contains(&"browser-render-sink"));
+        assert!(titles.contains(&"cookie-session-secret"));
+        assert!(titles.contains(&"debug-docs-metrics-surface"));
 
         let _ = fs::remove_dir_all(root);
     }

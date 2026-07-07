@@ -9,9 +9,9 @@ fn backticked_s5_final_revision_markers_are_the_explicit_final_set() {
          PROBE% id=INJ-CAND-01 result=control returned expected responses\n\
          CONTROL% id=INJ-CAND-01 negative=baseline rejected invalid input\n\
          `RUNBOOK% S5 Final Revision`\n\
-         `FINDING% id=F-001 severity=medium code_path=lib/insecurity.ts:73 confidence=high title=MD5 password hashing evidence=source returned MD5 hash payload=hashcat -m 0 hashes.txt`\n\
-         `FINDING% id=F-002 severity=medium code_path=lib/insecurity.ts:74 confidence=high title=Hardcoded HMAC key evidence=source returned static HMAC key payload=node hmac.js`\n\
-         `FINDING% id=F-003 severity=medium code_path=lib/insecurity.ts:151 confidence=high title=deluxeToken HMAC key reuse evidence=source returned reusable token material payload=node deluxe.js`",
+         `POC% id=POC-001 finding=F-001 severity=medium category=crypto code_path=lib/insecurity.ts:73 target=password-hash title=\"MD5 password hashing\" replay=\"hashcat -m 0 hashes.txt\" expected=md5-crackable verification=generated-not-verified cleanup=none`\n\
+         `POC% id=POC-002 finding=F-002 severity=medium category=crypto code_path=lib/insecurity.ts:74 target=hmac-key title=\"Hardcoded HMAC key\" replay=\"node hmac.js\" expected=static-key verification=generated-not-verified cleanup=none`\n\
+         `POC% id=POC-003 finding=F-003 severity=medium category=crypto code_path=lib/insecurity.ts:151 target=deluxe-token title=\"deluxeToken HMAC key reuse\" replay=\"node deluxe.js\" expected=reusable-token verification=generated-not-verified cleanup=none`",
     );
     state.complete();
     assert_eq!(state.status, RunbookStatus::Completed);
@@ -80,9 +80,9 @@ fn explicit_s5_final_set_keeps_source_backed_exposure_families() {
          PROBE% id=METRICS-01 result=GET /metrics returned 200 and Prometheus process metrics\n\
          CONTROL% id=METRICS-01 negative=authenticated and unauthenticated requests both return the same metrics document\n\
          `RUNBOOK% S5 Final Revision`\n\
-         `FINDING% id=F-01 severity=high code_path=server.ts:369 confidence=high title=Unauthenticated Product Modification via Commented-Out Auth evidence=PUT /api/Products/1 without auth returned 200 and server.ts shows commented-out isAuthorized payload=PUT /api/Products/1 {\"name\":\"HACKED\"}`\n\
-         `FINDING% id=F-02 severity=medium code_path=server.ts:718 confidence=high title=Prometheus Metrics Endpoint Exposed Without Authentication evidence=GET /metrics returned 200 payload=GET /metrics`\n\
-         `FINDING% id=F-03 severity=medium code_path=server.ts:607 confidence=high title=Continue Code Generate and Restore Without Authentication evidence=GET /rest/continue-code returned restorable code payload=GET /rest/continue-code`",
+         `POC% id=POC-001 finding=F-01 severity=high category=authz code_path=server.ts:369 target=/api/Products/1 title=\"Unauthenticated Product Modification via Commented-Out Auth\" replay=\"PUT /api/Products/1 {\\\"name\\\":\\\"HACKED\\\"}\" expected=product-modified verification=generated-not-verified cleanup=restored`\n\
+         `POC% id=POC-002 finding=F-02 severity=medium category=observability_leak code_path=server.ts:718 target=/metrics title=\"Prometheus Metrics Endpoint Exposed Without Authentication\" replay=\"GET /metrics\" expected=metrics-document verification=generated-not-verified cleanup=read-only`\n\
+         `POC% id=POC-003 finding=F-03 severity=medium category=auth code_path=server.ts:607 target=/rest/continue-code title=\"Continue Code Generate and Restore Without Authentication\" replay=\"GET /rest/continue-code\" expected=restorable-code verification=generated-not-verified cleanup=read-only`",
     );
     state.complete();
 

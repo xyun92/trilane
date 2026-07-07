@@ -114,6 +114,10 @@ impl RunbookState {
             }
             if let Some(marker_stage) = runbook_marker_stage(line) {
                 current_stage = marker_stage;
+                if marker_stage == "stage5" && is_s5_final_revision_start(line) {
+                    self.stage5_final_revision_seen = true;
+                    self.stage5_poc_entries.clear();
+                }
             }
             let lower = line.to_ascii_lowercase();
             if lower.starts_with("subagent%") {
@@ -433,13 +437,21 @@ impl RunbookState {
             if !ids.iter().any(|id| text.contains(id)) {
                 continue;
             }
-            has_positive |= text.contains("probe%") || text.contains("verify%");
-            has_control |= text.contains("control%");
+            has_positive |= matches!(evidence.kind.as_str(), "probe" | "verify")
+                || text.contains("probe%")
+                || text.contains("verify%");
+            has_control |= evidence.kind == "control" || text.contains("control%");
         }
         has_positive && has_control
     }
 
     fn extract_poc_marker(&mut self, stage: &str, line: &str) {
+        let poc_id = marker_value(line, "id").unwrap_or_else(|| {
+            format!(
+                "POC-{:03}",
+                self.stage5_poc_entries.len().saturating_add(1)
+            )
+        });
         let severity = marker_value(line, "severity").unwrap_or_else(|| infer_severity(line));
         let code_path = marker_value(line, "code_path")
             .or_else(|| marker_value(line, "source"))
@@ -448,7 +460,7 @@ impl RunbookState {
         let category = marker_value(line, "category").unwrap_or_else(|| infer_category(line));
         let source_id = marker_value(line, "finding")
             .or_else(|| marker_value(line, "claim"))
-            .or_else(|| marker_value(line, "id"));
+            .or_else(|| Some(poc_id.clone()));
         let title = marker_value(line, "title")
             .unwrap_or_else(|| self.poc_title_from_source(source_id.as_deref(), &category, &target));
         let precondition = marker_value(line, "precondition").unwrap_or_default();
@@ -487,12 +499,36 @@ impl RunbookState {
             );
         }
         let detail = format!(
-            "POC_ENTRY\ncategory={category}\ntarget={}\nprecondition={}\nexpected={}\nimpact={}\nverification={verification}\ncleanup={cleanup}\nevidence_refs={refs}",
+            "POC_ENTRY\npoc_id={poc_id}\ncategory={category}\ntarget={}\nprecondition={}\nexpected={}\nimpact={}\nverification={verification}\ncleanup={cleanup}\nevidence_refs={refs}",
             empty_dash(&target),
             empty_dash(&precondition),
             empty_dash(&expected),
             empty_dash(&impact),
         );
+        if stage == "stage5" {
+            let finding = RunbookFinding {
+                id: poc_id.clone(),
+                stage: stage.to_string(),
+                candidate_id: source_id.clone(),
+                severity: severity.clone(),
+                title: title.clone(),
+                code_path: code_path.clone(),
+                confidence: confidence.to_string(),
+                evidence_state: verification.clone(),
+                detail: truncate(&detail, 700),
+                payload: truncate(&replay, 900),
+                timestamp: now(),
+            };
+            if let Some(existing) = self
+                .stage5_poc_entries
+                .iter_mut()
+                .find(|entry| entry.id == poc_id)
+            {
+                *existing = finding;
+            } else {
+                self.stage5_poc_entries.push(finding);
+            }
+        }
         self.add_finding(RunbookFindingInput {
             stage,
             candidate_id: source_id,
@@ -564,4 +600,20 @@ impl RunbookState {
             payload: truncate(&payload, 900),
         });
     }
+}
+
+fn is_s5_final_revision_start(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    if !lower.starts_with("runbook% s5 final revision") {
+        return false;
+    }
+    ![
+        " complete",
+        " completed",
+        "audit complete",
+        "poc families",
+        "coverage domains",
+    ]
+    .iter()
+    .any(|needle| lower.contains(needle))
 }

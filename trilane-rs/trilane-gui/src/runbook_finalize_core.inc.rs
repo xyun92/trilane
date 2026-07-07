@@ -133,10 +133,13 @@ pub(crate) fn finalize_explicit_findings(
     let mut duplicates = 0usize;
     let mut dropped = 0usize;
     for finding in findings {
-        let original_id = finding
+        let original_id = explicit_poc_id(finding)
+            .or_else(|| {
+                finding
             .candidate_id
             .clone()
             .filter(|id| !id.trim().is_empty())
+            })
             .unwrap_or_else(|| finding.id.clone());
         if !seen.insert(original_id.clone()) {
             duplicates = duplicates.saturating_add(1);
@@ -203,6 +206,18 @@ pub(crate) fn finalize_explicit_findings(
             .count(),
     };
     (final_findings, summary)
+}
+
+fn explicit_poc_id(finding: &RunbookFinding) -> Option<String> {
+    if !finding.detail.starts_with("POC_ENTRY") {
+        return None;
+    }
+    finding.detail.lines().find_map(|line| {
+        line.strip_prefix("poc_id=")
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .map(str::to_string)
+    })
 }
 
 fn should_materialize_claim(claim: &RunbookClaim) -> bool {

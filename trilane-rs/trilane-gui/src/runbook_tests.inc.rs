@@ -767,28 +767,73 @@
     }
 
     #[test]
-    fn s5_final_revision_replaces_draft_findings_and_ignores_markdown_echoes() {
+    fn s5_final_revision_replaces_draft_pocs_and_ignores_markdown_echoes() {
         let mut state = RunbookState::default();
         state.start_turn("test target", AuditMode::Lab);
         state.record_agent_message(
             "RUNBOOK% S5 Verify: draft\n\
-             FINDING% id=DRAFT-01 severity=high code_path=routes/old.ts:1 confidence=high title=Old draft finding evidence=old proof payload=old",
+             POC% id=POC-001 finding=DRAFT-01 severity=high category=auth code_path=routes/old.ts:1 target=/old title=\"Old draft PoC\" replay=\"curl /old\" expected=old verification=generated-not-verified cleanup=none",
         );
-        assert_eq!(state.findings.len(), 1);
+        assert_eq!(state.stage5_poc_entries.len(), 1);
 
         state.record_agent_message(
             "RUNBOOK% S5 Final Revision\n\
-             FINDING% id=FINAL-01 severity=critical code_path=routes/new.ts:7 confidence=high title=Corrected canonical finding evidence=source exploit control payload=new\n\
-             ### FINAL-02: Markdown echo should not count\n\
+             POC% id=POC-002 finding=FINAL-01 severity=critical category=auth code_path=routes/new.ts:7 target=/new title=\"Corrected canonical PoC\" replay=\"curl /new\" expected=new verification=generated-not-verified cleanup=none\n\
+             ### POC-003: Markdown echo should not count\n\
              - Severity: high\n\
              - Code_Path: routes/echo.ts:9\n\
              - Evidence: report text only\n\
              - Payload: echo",
         );
 
-        assert_eq!(state.findings.len(), 1);
-        assert_eq!(state.findings[0].title, "Corrected canonical finding");
-        assert_eq!(state.findings[0].code_path, "routes/new.ts:7");
+        assert_eq!(state.stage5_poc_entries.len(), 1);
+        assert_eq!(state.stage5_poc_entries[0].title, "Corrected canonical PoC");
+        assert_eq!(state.stage5_poc_entries[0].code_path, "routes/new.ts:7");
+    }
+
+    #[test]
+    fn s5_final_revision_keeps_distinct_poc_ids_with_shared_candidate() {
+        let mut state = RunbookState::default();
+        state.start_turn("test target", AuditMode::Lab);
+        let draft = (1..=20)
+            .map(|idx| {
+                format!(
+                    "POC% id=POC-{idx:03} finding=CAND-{idx:03} severity=medium category=authz code_path=routes/old{idx}.ts target=/old/{idx} title=\"Old PoC {idx}\" replay=\"curl /old/{idx}\" expected=old-{idx} verification=generated-not-verified cleanup=none"
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        state.record_agent_message(&format!("RUNBOOK% S5 Verify\n{draft}"));
+
+        let final_rows = (1..=39)
+            .map(|idx| {
+                let source = if idx <= 2 { 1 } else { idx };
+                format!(
+                    "POC% id=POC-{idx:03} finding=CAND-{source:03} severity=medium category=authz code_path=routes/new{idx}.ts target=/new/{idx} title=\"Final PoC {idx}\" replay=\"curl /new/{idx}\" expected=final-{idx} verification=generated-not-verified cleanup=none"
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        state.record_agent_message(&format!("RUNBOOK% S5 Final Revision\n{final_rows}"));
+        state.record_agent_message(
+            "RUNBOOK% S5 Final Revision complete. 39 canonical PoC families. Audit complete.",
+        );
+        state.complete();
+
+        assert_eq!(state.stage5_poc_entries.len(), 39);
+        assert_eq!(state.final_findings.len(), 39);
+        assert!(state
+            .final_findings
+            .iter()
+            .any(|finding| finding.original_id == "POC-001"));
+        assert!(state
+            .final_findings
+            .iter()
+            .any(|finding| finding.original_id == "POC-002"));
+        assert!(!state
+            .final_findings
+            .iter()
+            .any(|finding| finding.detail.contains("expected=old-1")));
     }
 
     #[test]

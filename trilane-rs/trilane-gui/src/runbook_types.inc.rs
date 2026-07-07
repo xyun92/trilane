@@ -309,6 +309,10 @@ pub struct RunbookState {
     #[serde(default)]
     pub evidence_total: usize,
     pub findings: Vec<RunbookFinding>,
+    #[serde(default)]
+    pub stage5_poc_entries: Vec<RunbookFinding>,
+    #[serde(default)]
+    pub stage5_final_revision_seen: bool,
     pub final_findings: Vec<RunbookFinalFinding>,
     pub dedupe_summary: RunbookDedupeSummary,
     pub claim_summary: RunbookClaimSummary,
@@ -336,6 +340,8 @@ impl Default for RunbookState {
             evidence: Vec::new(),
             evidence_total: 0,
             findings: Vec::new(),
+            stage5_poc_entries: Vec::new(),
+            stage5_final_revision_seen: false,
             final_findings: Vec::new(),
             dedupe_summary: RunbookDedupeSummary::default(),
             claim_summary: RunbookClaimSummary::default(),

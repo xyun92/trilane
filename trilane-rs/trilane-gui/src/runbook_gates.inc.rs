@@ -349,18 +349,27 @@ impl RunbookState {
             .filter(|finding| finding.stage == "stage5")
             .cloned()
             .collect::<Vec<_>>();
-        let raw = if stage5_findings.is_empty() {
+        let explicit_stage5_findings = if self.stage5_final_revision_seen
+            || !self.stage5_poc_entries.is_empty()
+        {
+            self.stage5_poc_entries.clone()
+        } else {
+            stage5_findings.clone()
+        };
+        let raw = if explicit_stage5_findings.is_empty() {
             self.findings.len()
         } else {
-            stage5_findings.len()
+            explicit_stage5_findings.len()
         };
         self.adjudicate_claims();
-        let (final_findings, summary) = if stage5_findings.is_empty() {
+        let (final_findings, summary) = if explicit_stage5_findings.is_empty()
+            && !self.stage5_final_revision_seen
+        {
             crate::runbook_finalize::adjudicate_findings(&self.findings, &self.claims)
-        } else if self.has_s5_final_revision_marker() {
-            crate::runbook_finalize::finalize_explicit_findings(&stage5_findings)
+        } else if self.has_s5_final_revision_marker() || self.stage5_final_revision_seen {
+            crate::runbook_finalize::finalize_explicit_findings(&explicit_stage5_findings)
         } else {
-            crate::runbook_finalize::adjudicate_findings(&stage5_findings, &[])
+            crate::runbook_finalize::adjudicate_findings(&explicit_stage5_findings, &[])
         };
         self.final_findings = final_findings;
         self.dedupe_summary = summary;
