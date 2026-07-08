@@ -164,18 +164,29 @@ fn quoted_marker_value(rest: &str) -> Option<String> {
 }
 
 fn clean_marker_value(value: &str) -> Option<String> {
-    let value = value
+    let value = value.trim().trim_matches('`').trim();
+    let value = strip_balanced_outer_quotes(value)
         .trim()
-        .trim_matches('`')
-        .trim()
-        .trim_matches('"')
-        .trim_matches('\'')
         .trim_matches('`')
         .trim();
     if value.is_empty() {
         None
     } else {
         Some(value.to_string())
+    }
+}
+
+fn strip_balanced_outer_quotes(value: &str) -> &str {
+    if value.len() < 2 {
+        return value;
+    }
+    let bytes = value.as_bytes();
+    let first = bytes[0];
+    let last = bytes[bytes.len() - 1];
+    if (first == b'"' && last == b'"') || (first == b'\'' && last == b'\'') {
+        &value[1..value.len() - 1]
+    } else {
+        value
     }
 }
 
@@ -357,8 +368,8 @@ fn infer_coverage_category(text: &str) -> Option<String> {
     } else if contains_any(
         &lower,
         &[
-            "basket", "coupon", "checkout", "order", "price", "wallet", "payment", "negative",
-            "deluxe", "invariant",
+            "cart", "coupon", "checkout", "order", "price", "wallet", "payment", "negative",
+            "entitlement", "subscription", "plan", "tier", "invariant",
         ],
     ) {
         "state_invariant_abuse"

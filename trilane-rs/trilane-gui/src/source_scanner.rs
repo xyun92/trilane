@@ -200,6 +200,18 @@ fn add_matches(
             "xss-sink",
         ));
     }
+    if contains_any(lower, &["subtitle", ".vtt", "video"])
+        && contains_any(lower, &["script", "html", "render", "send"])
+    {
+        push(fact(
+            "injection_engine",
+            "xss",
+            target.clone(),
+            "media-render-sink",
+            "source->sink: media/subtitle render boundary",
+            "media-render-xss",
+        ));
+    }
     if contains_any(
         lower,
         &[
@@ -257,9 +269,31 @@ fn add_matches(
             "cookie-or-session-secret",
         ));
     }
+    if contains_any(lower, &["httponly", "samesite", "secure:", "secure ="])
+        || (contains_any(lower, &["cookie", "session"])
+            && contains_any(lower, &["expires", "maxage", "domain"]))
+    {
+        push(fact(
+            "config_engine",
+            "session",
+            target.clone(),
+            "cookie-flag-boundary",
+            "source->sink: cookie/session flag posture",
+            "cookie-session-flags",
+        ));
+    }
     if contains_any(
         lower,
-        &["basketid", "appenduserid", "isauthorized", "role", "admin"],
+        &[
+            "objectid",
+            "ownerid",
+            "userid",
+            "accountid",
+            "tenantid",
+            "isauthorized",
+            "role",
+            "admin",
+        ],
     ) {
         push(fact(
             "identity_engine",
@@ -276,7 +310,8 @@ fn add_matches(
             "captcha",
             "securityquestion",
             "security question",
-            "whoami",
+            "accountmetadata",
+            "profile",
             "totp",
             "2fa",
         ],
@@ -293,8 +328,31 @@ fn add_matches(
     if contains_any(
         lower,
         &[
+            "ratelimit",
+            "rate-limit",
+            "x-forwarded-for",
+            "trust proxy",
+            "req.ip",
+        ],
+    ) {
+        push(fact(
+            "logic_engine",
+            "rate_limit",
+            target.clone(),
+            "rate-limit-or-client-ip-boundary",
+            "source->sink: throttle key or client IP trust",
+            "rate-limit-bypass",
+        ));
+    }
+    if contains_any(
+        lower,
+        &[
             "coupon",
-            "deluxe",
+            "cart",
+            "subscription",
+            "entitlement",
+            "plan",
+            "tier",
             "wallet",
             "order",
             "payment",
@@ -362,6 +420,27 @@ fn add_matches(
     if contains_any(
         lower,
         &[
+            "snippet",
+            "source map",
+            "sourcemap",
+            ".map",
+            "stack trace",
+            "traceback",
+            "debug",
+        ],
+    ) {
+        push(fact(
+            "config_engine",
+            "observability_leak",
+            target.clone(),
+            "debug-artifact-exposure",
+            "source->sink: debug artifact or source metadata exposure",
+            "debug-artifact-exposure",
+        ));
+    }
+    if contains_any(
+        lower,
+        &[
             "../",
             "null byte",
             "poison",
@@ -378,6 +457,26 @@ fn add_matches(
             "path-traversal-or-archive",
             "source->sink: path/archive parser boundary",
             "path-traversal-or-zip",
+        ));
+    }
+    if contains_any(
+        lower,
+        &[
+            "mimetype",
+            "content-type",
+            "originalname",
+            "extension",
+            "endswith",
+        ],
+    ) && contains_any(lower, &["upload", "file", "multipart", "null"])
+    {
+        push(fact(
+            "ingress_engine",
+            "file_upload_xxe",
+            target.clone(),
+            "upload-validator-boundary",
+            "source->sink: upload type/name validator boundary",
+            "upload-validator-bypass",
         ));
     }
     if contains_any(
@@ -487,7 +586,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn scans_high_value_juice_shop_snippets() {
+    fn scans_high_value_web_snippets() {
         let root =
             std::env::temp_dir().join(format!("trilane-scanner-test-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
@@ -504,7 +603,27 @@ mod tests {
         .unwrap();
         fs::write(
             root.join("routes/app.ts"),
-            "app.use(errorhandler())\napp.use('/api-docs', swaggerUi.serve)\ncookieParser('kekse')\n",
+            "app.use(errorhandler())\napp.use('/api-docs', swaggerUi.serve)\ncookieParser('dev-secret')\napp.set('trust proxy', true)\nrateLimit({ keyGenerator: req => req.ip })\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("routes/upload.ts"),
+            "if (file.originalname.endsWith('.xml') && file.mimetype === 'text/xml') upload(file)\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("routes/media.ts"),
+            "res.send(`<script>${subtitle}</script>`)\n// render video subtitles from .vtt\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("routes/debug.ts"),
+            "res.json({ snippet: source, sourcemap: file, stackTrace: err.stack })\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("routes/session.ts"),
+            "res.cookie('sid', token, { httpOnly: false, sameSite: 'none', secure: false })\n",
         )
         .unwrap();
         fs::write(
@@ -513,7 +632,7 @@ mod tests {
         )
         .unwrap();
 
-        let facts = scan_root(&root, None, 30);
+        let facts = scan_root(&root, None, 40);
         let titles = facts.iter().map(|fact| fact.title).collect::<Vec<_>>();
         assert!(titles.contains(&"sql-injection-source-sink"));
         assert!(titles.contains(&"jwt-secret-material"));
@@ -522,6 +641,11 @@ mod tests {
         assert!(titles.contains(&"browser-render-sink"));
         assert!(titles.contains(&"cookie-session-secret"));
         assert!(titles.contains(&"debug-docs-metrics-surface"));
+        assert!(titles.contains(&"rate-limit-or-client-ip-boundary"));
+        assert!(titles.contains(&"upload-validator-boundary"));
+        assert!(titles.contains(&"media-render-sink"));
+        assert!(titles.contains(&"debug-artifact-exposure"));
+        assert!(titles.contains(&"cookie-flag-boundary"));
 
         let _ = fs::remove_dir_all(root);
     }

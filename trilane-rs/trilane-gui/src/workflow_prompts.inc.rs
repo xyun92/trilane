@@ -8,6 +8,9 @@ fn phase_context(phase: &WorkflowPhase, state: &RunbookState, objective: &str) -
              - Preserve recall: do not collapse the replacement set to only the highest-confidence/core PoCs.\n\
              - Accept drop/merge only for same-family duplicates, ledger contradictions, out-of-scope items, placeholders, or non-security observations.\n\
              - For missing live proof, weak replay, or uncertain impact, downgrade/rewrite to generated-not-verified or needs-poc instead of deleting.\n\
+             - Preserve finding= and evidence_refs= from a draft POC% row unless REVIEW_CONTEXT proves they are wrong.\n\
+             - Quote target/precondition/replay/expected/impact/evidence_refs when values contain spaces, shell quotes, JSON, semicolons, arrows, or angle brackets.\n\
+             - Verified rows need copyable replay commands or compact ordered steps; placeholder-only replay must be needs-poc or generated-not-verified.\n\
              - Do not invent PoCs beyond REVIEW% add_check items with an evidence_ref already present in RUNBOOK_CONTEXT.\n\
              - The backend treats this POC% set as the replacement final set; ordinary markdown tables are ignored for counting.\n\n\
              RUNBOOK_CONTEXT%\n{}\n\nREVIEW_CONTEXT%\n{}\n",
@@ -18,7 +21,7 @@ fn phase_context(phase: &WorkflowPhase, state: &RunbookState, objective: &str) -
     if phase.stage_code == "S1" {
         return format!(
             "\nSCANNER_CONTEXT%\n{}\n",
-            crate::source_scanner::scanner_packet(objective, None, 80)
+            crate::source_scanner::scanner_packet(objective, None, 85)
         );
     }
     if !matches!(phase.stage_code, "S3" | "S4" | "S5") {
@@ -48,7 +51,7 @@ fn cve_prior_contract() -> &'static str {
      - Identity: authentication bypass, missing authorization, BOLA/IDOR, privilege escalation, weak session/JWT/cookie lifecycle.\n\
      - Injection/Browser trust: SQL/NoSQL/template/command injection, unsafe eval/sandbox, XSS in rendered/header/media/browser sinks, CORS/header trust flaws.\n\
      - Files/Parsers/Egress: upload parser abuse, XXE/YAML/deserialization, archive/path traversal, LFI/file write, SSRF and open redirect.\n\
-     - Logic/Automation: state-invariant abuse, coupon/payment/wallet/order/review/export workflow bypass, recovery/reset/security-question/CAPTCHA/rate-limit bypass.\n\
+	     - Logic/Automation: state-invariant abuse, pricing/payment/wallet/order/review/export workflow bypass, entitlement/subscription abuse, recovery/reset/security-question/CAPTCHA/rate-limit bypass.\n\
      - Config/Observability/Crypto: hardcoded secrets, public config/docs/logs/metrics/debug/static files, weak hashes, JWT/key/signature/cookie issues.\n\
      - S2 rule: use this only to seed high-value CLAIM% candidates; proof, rejection, controls, and final findings belong to S4/S5."
 }
@@ -143,7 +146,7 @@ fn s2_lane_task(lane_id: &str) -> &'static str {
             "Engine categories: file_upload_xxe, traversal_lfi, ssrf_redirect. Audit upload handlers, MIME/extension/null-byte bypasses, parser abuse, XXE/YAML/deserialization, zip/path traversal, LFI/template layout/file read/write, SSRF, server-side fetchers, redirects, robots/static manifests, and static file ingress."
         }
         "logic_engine" => {
-            "Engine categories: state_invariant_abuse, anti_automation_bypass, rate_limit. Audit basket/cart/quantity/export ownership, data export/erasure scope, review/feedback authorship, wallet/coupon/payment/deluxe/order invariants, reset/recovery/security-question/CAPTCHA flaws, brute force, throttling, and state-machine bypasses."
+            "Engine categories: state_invariant_abuse, anti_automation_bypass, rate_limit. Audit cart/object/quantity/export ownership, data export/erasure scope, review/feedback authorship, wallet/coupon/payment/subscription/entitlement/order invariants, reset/recovery/security-question/CAPTCHA flaws, brute force, throttling, and state-machine bypasses."
         }
         "config_engine" => {
             "Engine categories: secrets_config, observability_leak, crypto. Audit hardcoded secrets, test credentials, API keys, TOTP seeds, exposed keys/config/logs/docs/metrics/debug routes, weak crypto/hash choices, JWT key/algorithm handling, and exploitable disclosure impact."
@@ -198,7 +201,7 @@ fn s2_quick_hits_checklist(lane_id: &str) -> &'static str {
         return "";
     }
     "QUICK_HITS_CHECKLIST%\n\
-	     - Check only these residual edges unless SOURCE_PACKET% shows an unclosed high-value obligation: JWT none/HS256/key confusion, 2FA/TOTP plaintext, reset-password HMAC/answer flow, whoami/JSONP/password-hash leak, image CAPTCHA answer/skip, accounting/order-history token gates, verbose error/debug exposure, Swagger/config/version/docs exposure, hardcoded API keys/secrets, and one missed IDOR/mass-assignment/business invariant.\n\
+	     - Check only these residual edges unless SOURCE_PACKET% shows an unclosed high-value obligation: JWT none/HS256/key confusion, 2FA/TOTP plaintext, reset-password HMAC/answer flow, account-metadata/JSONP/password-hash leak, CAPTCHA challenge-answer leak, accounting/order-history token gates, verbose error/debug exposure, Swagger/config/version/docs exposure, hardcoded API keys/secrets, and one missed IDOR/mass-assignment/business invariant.\n\
 	     - Emit only new residual CLAIM% lines. Do not emit any other machine-readable row.\n\
 	     - No exploratory prose or self-debate. Use bounded rg/sed source reads as needed, then decide from SOURCE_PACKET% and CORE_LANE_CONTEXT.\n\
 	     - Emit every credible QH-CAND-* claim. If the checklist adds nothing credible, end the turn without a marker.\n\n"
@@ -347,8 +350,8 @@ fn s2_lane_keywords(lane_id: &str) -> &'static [&'static str] {
             "download", "manifest", "static",
         ],
         "logic_engine" => &[
-            "wallet", "coupon", "payment", "order", "basket", "review", "feedback", "export",
-            "captcha", "security", "deluxe", "quantity", "erasure",
+            "wallet", "coupon", "payment", "order", "cart", "review", "feedback", "export",
+            "captcha", "security", "subscription", "entitlement", "quantity", "erasure",
         ],
         "config_engine" => &[
             "secret", "key", "config", "metrics", "log", "debug", "swagger", "openapi", "crypto",
@@ -376,7 +379,7 @@ fn s2_lane_keywords(lane_id: &str) -> &'static [&'static str] {
             "coupon",
             "payment",
             "order",
-            "basket",
+            "cart",
             "review",
             "export",
             "captcha",
@@ -401,10 +404,10 @@ fn s2_cross_lane_seed_keywords(lane_id: &str) -> &'static [&'static str] {
         ],
         "logic_engine" => &[
             "checkout", "campaign", "clock", "memory", "feedback", "author", "wallet", "coupon",
-            "basket", "order", "deluxe",
+            "cart", "order", "subscription", "entitlement",
         ],
         "config_engine" => &[
-            "swagger", "api-docs", "metrics", "logs", "support", "debug", "captcha", "premium",
+            "swagger", "api-docs", "metrics", "logs", "support", "debug", "captcha", "entitlement",
             "encryptionkeys", "jwt.pub",
         ],
         "quick_hits_engine" => &[
@@ -415,13 +418,13 @@ fn s2_cross_lane_seed_keywords(lane_id: &str) -> &'static [&'static str] {
             "support",
             "debug",
             "captcha",
-            "premium",
+            "entitlement",
             "encryptionkeys",
             "jwt.pub",
             "checkout",
             "wallet",
             "coupon",
-            "basket",
+            "cart",
             "order",
         ],
         _ => &[],

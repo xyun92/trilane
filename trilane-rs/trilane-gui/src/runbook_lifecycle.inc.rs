@@ -485,6 +485,7 @@ fn report_objective(objective: &str) -> String {
                 && !lower.contains("stage3/")
                 && !lower.contains("stage4/")
                 && !lower.contains("stage5/")
+                && !lower.starts_with("original_objective%")
                 && !lower.starts_with("resume_run_context%")
         })
         .collect::<Vec<_>>()

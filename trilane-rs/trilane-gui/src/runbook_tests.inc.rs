@@ -735,7 +735,7 @@
     fn poc_marker_parser_preserves_replay_and_sanitizes_report() {
         let mut state = RunbookState::default();
         state.start_turn(
-            "Penetration test juice-shop\nRESUME_RUN_CONTEXT%\n/Users/wuxuyun/.trilane/runs/old/stage2/runbook.json",
+            "ORIGINAL_OBJECTIVE%\nPenetration test juice-shop\nRESUME_RUN_CONTEXT%\n/Users/wuxuyun/.trilane/runs/old/stage2/runbook.json",
             AuditMode::Lab,
         );
         state.record_workflow_phase("stage4", "S4 Fuzz");
@@ -760,10 +760,101 @@
         assert_eq!(finding.evidence_state, "verified");
 
         let report = state.final_report_markdown();
+        assert!(!report.contains("ORIGINAL_OBJECTIVE%"));
+        assert!(report.contains("Objective: Penetration test juice-shop"));
         assert!(!report.contains("RESUME_RUN_CONTEXT%"));
         assert!(!report.contains("/.trilane/runs/"));
         assert!(!report.contains("stage2/runbook.json"));
         assert!(!report.contains("### VULN-001 - POC%"));
+    }
+
+    #[test]
+    fn poc_marker_parser_keeps_unquoted_shell_and_json_trailing_quotes() {
+        let mut state = RunbookState::default();
+        state.start_turn("test target", AuditMode::Lab);
+        state.record_workflow_phase("stage4", "S4 Fuzz");
+        state.record_agent_message(
+            "PROBE% id=INJ-CAND-02 result=HTTP 200 returned admin token\n\
+             CONTROL% id=INJ-CAND-02 negative=wrong password returns 401",
+        );
+        state.record_workflow_phase("stage5", "S5 Verify");
+        state.record_agent_message(
+            r#"POC% id=POC-002 finding=INJ-CAND-02 severity=critical category=injection code_path=routes/login.ts:34 target=POST /rest/user/login precondition=none replay=curl -s http://localhost:3000/rest/user/login -X POST -H 'Content-Type: application/json' -d '{"email":"'\'' OR 1=1--","password":"x"}' expected=HTTP 200 returns admin JWT impact=Authentication bypass verification=verified cleanup=read-only evidence_refs=INJ-CAND-02"#,
+        );
+
+        let poc = state
+            .stage5_poc_entries
+            .iter()
+            .find(|entry| entry.id == "POC-002")
+            .expect("poc entry");
+        assert!(poc.payload.ends_with(r#""password":"x"}'"#));
+        assert!(!poc.payload.contains(" expected="));
+        assert!(poc.detail.contains("expected=HTTP 200 returns admin JWT"));
+        assert_eq!(poc.evidence_state, "verified");
+    }
+
+    #[test]
+    fn s5_verified_gate_uses_claim_state_when_evidence_window_rolls_over() {
+        let mut state = RunbookState::default();
+        state.start_turn("test target", AuditMode::Lab);
+        state.record_workflow_phase("stage4", "S4 Fuzz");
+        state.record_agent_message(
+            r#"CLAIM% id=INJ-CAND-01 category=injection target=routes/search.ts:23 severity=critical confidence=high title="Search SQLi" reason=source->sink next=poc:search-sqli
+PROBE% id=INJ-CAND-01 result="UNION SELECT returned user rows"
+CONTROL% id=INJ-CAND-01 negative="normal search returns only product rows"
+VERIFY% id=INJ-CAND-01 exploit="UNION SELECT extracts users" root_cause=routes/search.ts:23 control="normal search returns only product rows" cleanup=read-only"#,
+        );
+        state.evidence.clear();
+
+        state.record_workflow_phase("stage5", "S5 Verify");
+        state.record_agent_message(
+            r#"POC% id=POC-001 finding=INJ-CAND-01 severity=critical category=injection code_path=routes/search.ts:23 target="GET /rest/products/search?q=" precondition=none replay="curl --get http://localhost:3000/rest/products/search --data-urlencode q=x" expected="HTTP 200 returns users" impact="database read" verification=generated-not-verified cleanup=read-only evidence_refs=INJ-CAND-01"#,
+        );
+        assert_eq!(
+            state
+                .claims
+                .iter()
+                .find(|claim| claim.id == "INJ-CAND-01")
+                .map(|claim| claim.stage.as_str()),
+            Some("stage5")
+        );
+        state.record_agent_message(
+            r#"RUNBOOK% S5 Final Revision
+POC% id=POC-001 finding=INJ-CAND-01 severity=critical category=injection code_path=routes/search.ts:23 target="GET /rest/products/search?q=" precondition=none replay="curl --get http://localhost:3000/rest/products/search --data-urlencode q=x" expected="HTTP 200 returns users" impact="database read" verification=verified cleanup=read-only evidence_refs=INJ-CAND-01"#,
+        );
+
+        let poc = state
+            .stage5_poc_entries
+            .iter()
+            .find(|entry| entry.id == "POC-001")
+            .expect("poc entry");
+        assert_eq!(poc.evidence_state, "verified");
+    }
+
+    #[test]
+    fn s5_verified_gate_matches_zero_padded_claim_ids() {
+        let mut state = RunbookState::default();
+        state.start_turn("test target", AuditMode::Lab);
+        state.record_workflow_phase("stage4", "S4 Fuzz");
+        state.record_agent_message(
+            r#"CLAIM% id=XSS-CAND-01 category=xss target=routes/search.ts:42 severity=high confidence=high title="Search reflected XSS" reason=source->sink next=poc:search-xss
+PROBE% id=XSS-CAND-01 result="payload reflected into HTML"
+CONTROL% id=XSS-CAND-01 negative="encoded payload does not execute"
+VERIFY% id=XSS-CAND-01 exploit="script payload executes" root_cause=routes/search.ts:42 control="encoded payload does not execute" cleanup=read-only"#,
+        );
+        state.evidence.clear();
+
+        state.record_workflow_phase("stage5", "S5 Verify");
+        state.record_agent_message(
+            r#"POC% id=POC-010 finding=XSS-CAND-001 severity=high category=xss code_path=routes/search.ts:42 target="GET /rest/products/search?q=" precondition=none replay="curl --get http://localhost:3000/rest/products/search --data-urlencode q=<svg/onload=alert(1)>" expected="payload reflected into HTML" impact="browser script execution" verification=verified cleanup=read-only evidence_refs=XSS-CAND-001"#,
+        );
+
+        let poc = state
+            .stage5_poc_entries
+            .iter()
+            .find(|entry| entry.id == "POC-010")
+            .expect("poc entry");
+        assert_eq!(poc.evidence_state, "verified");
     }
 
     #[test]

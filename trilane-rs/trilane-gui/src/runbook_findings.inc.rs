@@ -427,6 +427,9 @@ impl RunbookState {
         if ids.is_empty() {
             return false;
         }
+        if ids.iter().any(|id| self.claim_has_s4_control_backed_signal(id)) {
+            return true;
+        }
         let mut has_positive = false;
         let mut has_control = false;
         for evidence in &self.evidence {
@@ -443,6 +446,21 @@ impl RunbookState {
             has_control |= evidence.kind == "control" || text.contains("control%");
         }
         has_positive && has_control
+    }
+
+    fn claim_has_s4_control_backed_signal(&self, id: &str) -> bool {
+        self.claims.iter().any(|claim| {
+            evidence_id_eq(&claim.id, id)
+                && matches!(
+                    claim.status,
+                    ClaimStatus::Verified | ClaimStatus::Weaponized | ClaimStatus::Publishable
+                )
+                && matches!(claim.evidence_level, EvidenceLevel::ControlPassed)
+                && claim.probe_count > 0
+                && claim.verification_count > 0
+                && !claim.positive_evidence.trim().is_empty()
+                && !claim.negative_evidence.trim().is_empty()
+        })
     }
 
     fn extract_poc_marker(&mut self, stage: &str, line: &str) {
@@ -600,6 +618,23 @@ impl RunbookState {
             payload: truncate(&payload, 900),
         });
     }
+}
+
+fn evidence_id_eq(left: &str, right: &str) -> bool {
+    canonical_evidence_id(left) == canonical_evidence_id(right)
+}
+
+fn canonical_evidence_id(id: &str) -> String {
+    let id = id.trim().to_ascii_lowercase();
+    let Some((prefix, suffix)) = id.rsplit_once('-') else {
+        return id;
+    };
+    if suffix.is_empty() || !suffix.chars().all(|ch| ch.is_ascii_digit()) {
+        return id;
+    }
+    let number = suffix.trim_start_matches('0');
+    let number = if number.is_empty() { "0" } else { number };
+    format!("{prefix}-{number}")
 }
 
 fn is_s5_final_revision_start(line: &str) -> bool {

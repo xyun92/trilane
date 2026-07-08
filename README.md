@@ -56,6 +56,8 @@ Penetration test juice-shop, source code is in ~/juice-shop, service is running 
 
 Free-form AI security agents can drift. TriLane makes the audit state explicit: surfaces are inventoried, lane outputs are merged, risky probes are gated by mode, and final findings are deduplicated before export.
 
+**0.2.0 update:** TriLane's workflow has been substantially optimized with stronger source scanning, leaner candidate generation, and cleaner PoC-bundle export. In our Juice Shop regression runs, the new pipeline is faster, uses fewer model tokens, and produces higher-quality replayable PoCs than the previous release.
+
 ![TriLane screenshot](./assets/trilane-screenshot.png)
 
 ## What TriLane Does

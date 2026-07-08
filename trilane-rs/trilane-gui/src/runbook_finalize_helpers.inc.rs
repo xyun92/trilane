@@ -268,10 +268,13 @@ fn semantic_family_key(surface: &str, location: &str, candidate_id: Option<&str>
             "headers:missing-hsts"
         } else if contains_any(surface, &["rate limit", "brute force"]) {
             "rate:missing-rate-limit"
-        } else if surface.contains("deluxe") {
-            "business:free-deluxe-membership"
-        } else if surface.contains("basket") || surface.contains("idor") {
-            "authz:basket-idor"
+        } else if contains_any(
+            surface,
+            &["entitlement", "subscription", "premium", "plan", "tier"],
+        ) {
+            "business:entitlement-bypass"
+        } else if contains_any(surface, &["idor", "bola", "object ownership"]) {
+            "authz:object-ownership-idor"
         } else if surface.contains("coupon") {
             "business:coupon-abuse"
         } else if contains_any(surface, &["negative order", "negative total"]) {
@@ -289,7 +292,7 @@ fn semantic_family_key(surface: &str, location: &str, candidate_id: Option<&str>
             "secrets:jwt-private-key"
         } else if contains_any(
             surface,
-            &["encryptionkeys", "jwt public key", "premium.key"],
+            &["encryptionkeys", "jwt public key", "public key file"],
         ) {
             "secrets:public-encryption-keys"
         } else if contains_any(
@@ -305,8 +308,8 @@ fn semantic_family_key(surface: &str, location: &str, candidate_id: Option<&str>
             "secrets:leaked-api-key"
         } else if contains_any(surface, &["security question", "enumeration"]) {
             "auth:security-question-enumeration"
-        } else if contains_any(surface, &["wallet balance", "userid parameter"]) {
-            "business:wallet-balance-userid"
+        } else if contains_any(surface, &["wallet balance", "account balance", "userid parameter"]) {
+            "business:account-balance-userid"
         } else if contains_any(surface, &["bot factory", "chatbot", "botutils"]) {
             "business:chatbot-handler-surface"
         } else if contains_any(surface, &["order pdf", "publicly accessible"]) {
@@ -468,8 +471,8 @@ fn infer_category(text: &str) -> &'static str {
     } else if contains_any(
         text,
         &[
-            "basket", "coupon", "checkout", "order", "price", "wallet", "payment", "negative",
-            "deluxe", "invariant",
+            "cart", "coupon", "checkout", "order", "price", "wallet", "payment", "negative",
+            "entitlement", "subscription", "plan", "tier", "invariant",
         ],
     ) {
         "state_invariant_abuse"

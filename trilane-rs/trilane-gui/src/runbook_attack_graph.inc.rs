@@ -438,7 +438,7 @@ fn infer_bridge_keys(text: &str) -> Vec<String> {
         ("role", "identity"),
         ("admin", "identity"),
         ("user", "identity"),
-        ("basket", "object"),
+        ("cart", "object"),
         ("order", "object"),
         ("wallet", "money"),
         ("coupon", "money"),

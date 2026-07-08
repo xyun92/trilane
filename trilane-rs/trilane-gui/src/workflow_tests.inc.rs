@@ -586,7 +586,7 @@
         state.candidates.push(RunbookCandidate {
             id: "S1-OBL-04".to_string(),
             stage: "stage1".to_string(),
-            category: "authz debt=BasketItems-IDOR source=server.ts:425".to_string(),
+            category: "authz debt=CartItems-IDOR source=server.ts:425".to_string(),
             title: "server.ts:425 appendUserId sink=ownership-check".to_string(),
             target: "unmapped-feature".to_string(),
             status: CandidateStatus::Candidate,
@@ -673,7 +673,7 @@
         state.start_turn("audit target", AuditMode::Lab);
         state.record_agent_message(
             "RUNBOOK% S1 Recon: route and source read targets\n\
-             READ_TARGET% lane=identity_engine priority=high category=authz kind=endpoint-control path=routes/basket.ts lines=1-160 endpoint=/api/BasketItems object_id=body.BasketId auth_hint=middleware ownership_hint=unknown reason=object_id_write_without_obvious_owner_check question=prove_user_bid_controls_body_BasketId stop_when=owner_check_found_or_missing broaden_after=shared_basket_helper follow=middleware/auth.ts,models/Basket.ts",
+             READ_TARGET% lane=identity_engine priority=high category=authz kind=endpoint-control path=routes/cart.ts lines=1-160 endpoint=/api/CartItems object_id=body.CartId auth_hint=middleware ownership_hint=unknown reason=object_id_write_without_obvious_owner_check question=prove_user_controls_body_CartId stop_when=owner_check_found_or_missing broaden_after=shared_cart_helper follow=middleware/auth.ts,models/Cart.ts",
         );
 
         let mut workflow = TriLaneWorkflow::new("audit target".to_string());
@@ -692,12 +692,12 @@
         assert!(identity.prompt.contains("Follow S1 READ_TARGET% items"));
         assert!(identity
             .prompt
-            .contains("READ_TARGET% category=authz target=routes/basket.ts"));
+            .contains("READ_TARGET% category=authz target=routes/cart.ts"));
         assert!(identity.prompt.contains("ownership_hint=unknown"));
         assert!(identity
             .prompt
-            .contains("question=prove_user_bid_controls_body_BasketId"));
-        assert!(identity.prompt.contains("broaden_after=shared_basket_helper"));
+            .contains("question=prove_user_controls_body_CartId"));
+        assert!(identity.prompt.contains("broaden_after=shared_cart_helper"));
     }
 
     #[test]
@@ -798,7 +798,7 @@
              SUBAGENT% lane=ingress_engine status=done claims=2 candidates=0 note=ingress complete\n\
              CLAIM% id=INGRESS-CAND-01 category=file_upload_xxe target=routes/fileUpload.ts status=anchored level=source title=\"ingress finding\" root_cause=routes/fileUpload.ts impact=file_disclosure\n\
              SUBAGENT% lane=logic_engine status=done claims=2 candidates=0 note=logic complete\n\
-             CLAIM% id=LOGIC-CAND-01 category=state_invariant_abuse target=routes/deluxe.ts status=anchored level=source title=\"logic finding\" root_cause=routes/deluxe.ts impact=free_deluxe\n\
+             CLAIM% id=LOGIC-CAND-01 category=state_invariant_abuse target=routes/subscription.ts status=anchored level=source title=\"logic finding\" root_cause=routes/subscription.ts impact=free_subscription\n\
              SUBAGENT% lane=config_engine status=done claims=2 candidates=0 note=config complete\n\
              CLAIM% id=CONFIG-CAND-01 category=crypto target=lib/insecurity.ts status=anchored level=source title=\"config finding\" root_cause=lib/insecurity.ts impact=jwt_forgery\n\
              SUBAGENT% lane=quick_hits_engine status=done claims=0 candidates=0 note=quick hits empty",
@@ -945,6 +945,9 @@
         assert!(prompt.prompt.contains("Output-only correction pass"));
         assert!(prompt.prompt.contains("REVIEW_CONTEXT is advisory"));
         assert!(prompt.prompt.contains("Preserve recall"));
+        assert!(prompt.prompt.contains("Preserve finding= and evidence_refs="));
+        assert!(prompt.prompt.contains("Quote target/precondition/replay/expected/impact/evidence_refs"));
+        assert!(prompt.prompt.contains("Verified rows need copyable replay"));
         assert!(prompt
             .prompt
             .contains("replacement canonical POC% set"));
