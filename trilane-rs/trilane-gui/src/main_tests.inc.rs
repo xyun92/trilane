@@ -78,3 +78,11 @@
         assert!(!active.all_complete());
         assert_eq!(active.running_count(), 0);
     }
+
+    #[test]
+    fn provider_ids_are_safe_toml_table_keys() {
+        assert!(valid_provider_id("company-deepseek"));
+        assert!(valid_provider_id("gateway_2"));
+        assert!(!valid_provider_id("Company deepseek"));
+        assert!(!valid_provider_id("provider.name"));
+    }

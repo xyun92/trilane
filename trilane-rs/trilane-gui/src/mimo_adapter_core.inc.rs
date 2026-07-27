@@ -10,6 +10,7 @@ pub async fn start(
     upstream_base_url: String,
     api_key: String,
     multimodal_model: Option<String>,
+    no_proxy: bool,
 ) -> Result<String, String> {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
@@ -18,11 +19,17 @@ pub async fn start(
         .local_addr()
         .map_err(|e| format!("MiMo adapter local_addr failed: {e}"))?;
 
+    let client = if no_proxy {
+        reqwest::Client::builder().no_proxy().build()
+    } else {
+        reqwest::Client::builder().build()
+    }
+    .map_err(|e| format!("Chat Completions adapter client failed: {e}"))?;
     let state = Arc::new(AdapterState {
         upstream_base_url,
         api_key,
         multimodal_model,
-        client: reqwest::Client::new(),
+        client,
     });
     let app = Router::new()
         .route("/responses", post(handle_responses))
@@ -304,4 +311,3 @@ fn copy_request_field(request: &Value, chat_request: &mut Value, field: &str) {
         chat_request[field] = value.clone();
     }
 }
-

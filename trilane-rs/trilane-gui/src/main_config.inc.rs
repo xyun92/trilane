@@ -15,8 +15,10 @@ pub struct ModelConfig {
 pub struct CustomProvider {
     pub id: String,
     pub name: String,
+    pub model: String,
     pub base_url: String,
     pub env_key: String,
+    pub adapter: String,
     pub api_key_masked: String, // e.g. "sk-...abc" — only last 4 chars shown
 }
 
@@ -102,6 +104,12 @@ fn derived_api_key_env(provider_id: &str) -> String {
     )
 }
 
+fn valid_provider_id(provider_id: &str) -> bool {
+    let mut chars = provider_id.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_lowercase() || c.is_ascii_digit())
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '-' | '_'))
+}
+
 fn provider_env_key(provider_id: &str, provider: Option<&toml::Table>) -> String {
     if provider_id == MIMO_PROVIDER_ID {
         return provider
@@ -139,6 +147,7 @@ struct MimoAdapterConfig {
     base_url: String,
     env_key: String,
     multimodal_model: Option<String>,
+    no_proxy: bool,
 }
 
 fn mimo_adapter_config() -> Result<Option<MimoAdapterConfig>, String> {
@@ -148,48 +157,69 @@ fn mimo_adapter_config() -> Result<Option<MimoAdapterConfig>, String> {
         .get("model_provider")
         .and_then(|value| value.as_str())
         .unwrap_or("openai");
-    if provider_id != MIMO_PROVIDER_ID {
-        return Ok(None);
-    }
     let provider = table
         .get("model_providers")
         .and_then(|value| value.as_table())
         .and_then(|providers| providers.get(provider_id))
         .and_then(|value| value.as_table());
+    let adapter = provider
+        .and_then(|provider| provider.get("adapter"))
+        .and_then(|value| value.as_str())
+        .unwrap_or(if provider_id == MIMO_PROVIDER_ID {
+            "mimo-chat-completions"
+        } else {
+            "responses"
+        });
+    if !matches!(
+        adapter,
+        "mimo-chat-completions" | "chat-completions" | "chat-completions-direct"
+    ) {
+        return Ok(None);
+    }
     let Some(provider) = provider else {
+        if provider_id != MIMO_PROVIDER_ID {
+            return Err(format!(
+                "Chat Completions provider {provider_id} is missing its provider configuration"
+            ));
+        }
         return Ok(Some(MimoAdapterConfig {
             provider_id: MIMO_PROVIDER_ID.to_string(),
             base_url: MIMO_TOKEN_PLAN_CN_BASE_URL.to_string(),
             env_key: MIMO_API_KEY_ENV.to_string(),
             multimodal_model: Some(MIMO_DEFAULT_MULTIMODAL_MODEL.to_string()),
+            no_proxy: false,
         }));
     };
     let base_url = provider
         .get("base_url")
         .and_then(|value| value.as_str())
-        .unwrap_or(MIMO_TOKEN_PLAN_CN_BASE_URL);
-    if !base_url.contains("xiaomimimo.com") {
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| format!("Chat Completions provider {provider_id} has no base_url"))?;
+    if provider_id == MIMO_PROVIDER_ID && !base_url.contains("xiaomimimo.com") {
         return Err(format!(
             "Xiaomi MiMo provider must use a xiaomimimo.com OpenAI-compatible base URL, got {base_url}"
         ));
     }
-    let multimodal_model = table
-        .get("multimodal_model")
-        .and_then(|value| value.as_str())
-        .or_else(|| {
-            provider
-                .get("multimodal_model")
-                .and_then(|value| value.as_str())
-        })
-        .filter(|model| !model.trim().is_empty())
-        .unwrap_or(MIMO_DEFAULT_MULTIMODAL_MODEL)
-        .to_string();
+    let multimodal_model = (provider_id == MIMO_PROVIDER_ID).then(|| {
+        table
+            .get("multimodal_model")
+            .and_then(|value| value.as_str())
+            .or_else(|| {
+                provider
+                    .get("multimodal_model")
+                    .and_then(|value| value.as_str())
+            })
+            .filter(|model| !model.trim().is_empty())
+            .unwrap_or(MIMO_DEFAULT_MULTIMODAL_MODEL)
+            .to_string()
+    });
 
     Ok(Some(MimoAdapterConfig {
         provider_id: provider_id.to_string(),
         base_url: base_url.to_string(),
         env_key: provider_env_key(provider_id, Some(provider)),
-        multimodal_model: Some(multimodal_model),
+        multimodal_model,
+        no_proxy: adapter == "chat-completions-direct",
     }))
 }
 
@@ -243,13 +273,27 @@ fn apply_saved_provider_api_keys() -> Result<(), String> {
 
 /// Write secrets to ~/.trilane/secrets.toml
 fn write_secrets(secrets: &std::collections::HashMap<String, String>) -> Result<(), String> {
+    use std::os::unix::fs::OpenOptionsExt;
+    use std::os::unix::fs::PermissionsExt;
+    use std::io::Write;
+
     let path = secrets_path();
     std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| format!("mkdir failed: {e}"))?;
     let mut doc = String::new();
     for (key, val) in secrets {
         doc.push_str(&format!("{key} = \"{val}\"\n"));
     }
-    std::fs::write(&path, doc).map_err(|e| format!("Write failed: {e}"))?;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .mode(0o600)
+        .open(&path)
+        .map_err(|e| format!("Open failed: {e}"))?;
+    file.write_all(doc.as_bytes())
+        .map_err(|e| format!("Write failed: {e}"))?;
+    file.set_permissions(std::fs::Permissions::from_mode(0o600))
+        .map_err(|e| format!("Permissions failed: {e}"))?;
     Ok(())
 }
 
@@ -345,11 +389,27 @@ async fn read_model_config() -> Result<ModelConfig, String> {
                         .and_then(|v| v.as_str())
                         .unwrap_or(id)
                         .to_string(),
+                    model: pt
+                        .get("model")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string)
+                        .unwrap_or_else(|| {
+                            if model_provider == *id {
+                                model.clone()
+                            } else {
+                                String::new()
+                            }
+                        }),
                     base_url: base_url.clone(),
                     env_key: pt
                         .get("env_key")
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
+                        .to_string(),
+                    adapter: pt
+                        .get("adapter")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("responses")
                         .to_string(),
                     api_key_masked,
                 });
@@ -410,8 +470,22 @@ async fn read_model_config() -> Result<ModelConfig, String> {
 
 #[tauri::command]
 async fn save_model_config(config: ModelConfig) -> Result<(), String> {
+    if let Some(provider) = config
+        .custom_providers
+        .iter()
+        .find(|provider| !valid_provider_id(&provider.id))
+    {
+        return Err(format!(
+            "Invalid provider ID {:?}; use lowercase letters, numbers, '-' or '_'",
+            provider.id
+        ));
+    }
     let path = config_path();
     std::fs::create_dir_all(path.parent().unwrap()).map_err(|e| format!("mkdir failed: {e}"))?;
+    let existing_projects = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|content| content.parse::<toml::Table>().ok())
+        .and_then(|table| table.get("projects").cloned());
 
     let mut doc = String::new();
     doc.push_str(&format!("model_provider = \"{}\"\n", config.model_provider));
@@ -492,13 +566,29 @@ async fn save_model_config(config: ModelConfig) -> Result<(), String> {
         }
         doc.push_str(&format!("[model_providers.{}]\n", provider.id));
         doc.push_str(&format!("name = \"{}\"\n", provider.name));
+        if !provider.model.is_empty() {
+            doc.push_str(&format!("model = \"{}\"\n", provider.model));
+        }
         doc.push_str(&format!("base_url = \"{}\"\n", provider.base_url));
         if !provider.env_key.is_empty() {
             doc.push_str(&format!("env_key = \"{}\"\n", provider.env_key));
         }
         doc.push_str("wire_api = \"responses\"\n");
         doc.push_str("requires_openai_auth = false\n");
+        doc.push_str("supports_websockets = false\n");
+        if provider.adapter != "responses" && !provider.adapter.is_empty() {
+            doc.push_str(&format!("adapter = \"{}\"\n", provider.adapter));
+        }
         doc.push('\n');
+    }
+
+    if let Some(projects) = existing_projects {
+        let mut preserved = toml::Table::new();
+        preserved.insert("projects".to_string(), projects);
+        doc.push_str(
+            &toml::to_string(&preserved)
+                .map_err(|e| format!("Preserve projects failed: {e}"))?,
+        );
     }
 
     std::fs::write(&path, &doc).map_err(|e| format!("Write failed: {e}"))?;
@@ -517,6 +607,11 @@ async fn save_model_config(config: ModelConfig) -> Result<(), String> {
 /// This keeps API keys out of the main config file
 #[tauri::command]
 async fn save_provider_api_key(provider_id: String, api_key: String) -> Result<(), String> {
+    if !valid_provider_id(&provider_id) {
+        return Err(format!(
+            "Invalid provider ID {provider_id:?}; use lowercase letters, numbers, '-' or '_'"
+        ));
+    }
     let mut secrets = read_secrets();
     let env_key = configured_provider_env_key(&provider_id);
     if api_key.is_empty() {

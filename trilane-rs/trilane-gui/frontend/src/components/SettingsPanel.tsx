@@ -4,8 +4,10 @@ import { invoke } from "@tauri-apps/api/core";
 interface CustomProvider {
   id: string;
   name: string;
+  model: string;
   base_url: string;
   env_key: string;
+  adapter: string;
   api_key_masked: string;
 }
 
@@ -43,8 +45,10 @@ export default function SettingsPanel() {
   const [showApiKey, setShowApiKey] = useState(false);
   const [newProviderId, setNewProviderId] = useState("");
   const [newProviderName, setNewProviderName] = useState("");
+  const [newProviderModel, setNewProviderModel] = useState("");
   const [newProviderUrl, setNewProviderUrl] = useState("");
   const [newProviderKey, setNewProviderKey] = useState("");
+  const [newProviderAdapter, setNewProviderAdapter] = useState("responses");
   const [saveError, setSaveError] = useState<string | null>(null);
   // One-time reveal state
   const [revealKey, setRevealKey] = useState<string | null>(null);
@@ -103,23 +107,42 @@ export default function SettingsPanel() {
   }
 
   async function addCustomProvider() {
-    if (!config || !newProviderId || !newProviderUrl) return;
-    if (newProviderId.trim().toLowerCase() === XIAOMI_PROVIDER_ID) {
-      setSaveError("Xiaomi MiMo is a built-in provider. Select XM in provider.matrix instead.");
+    if (!config || !newProviderId || !newProviderModel || !newProviderUrl) {
+      setSaveError("Provider ID, Model ID, and Base URL are required.");
       return;
     }
-    const envKey = newProviderId.toUpperCase().replace(/[^A-Z0-9]/g, "") + "_API_KEY";
+    const providerId = newProviderId
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9_-]/g, "");
+    if (!providerId) {
+      setSaveError("Provider ID must contain lowercase letters or numbers.");
+      return;
+    }
+    if (BUILT_IN_PROVIDERS.some((provider) => provider.id === providerId)) {
+      setSaveError(`"${providerId}" is a built-in provider. Select it in provider.matrix instead.`);
+      return;
+    }
+    if (config.custom_providers.some((provider) => provider.id === providerId)) {
+      setSaveError(`Provider ID "${providerId}" already exists.`);
+      return;
+    }
+    const envKey = providerId.toUpperCase().replace(/[^A-Z0-9]/g, "") + "_API_KEY";
     const updated = {
       ...config,
-      model_provider: newProviderId,
+      model_provider: providerId,
+      model: newProviderModel.trim(),
       openai_base_url: newProviderUrl,
       custom_providers: [
         ...config.custom_providers,
         {
-          id: newProviderId,
-          name: newProviderName || newProviderId,
+          id: providerId,
+          name: newProviderName || providerId,
+          model: newProviderModel.trim(),
           base_url: newProviderUrl,
           env_key: envKey,
+          adapter: newProviderAdapter,
           api_key_masked: newProviderKey ? "***" : "not set",
         },
       ],
@@ -127,11 +150,13 @@ export default function SettingsPanel() {
     setConfig(updated);
     setNewProviderId("");
     setNewProviderName("");
+    setNewProviderModel("");
     setNewProviderUrl("");
+    setNewProviderAdapter("responses");
     // Save API key to secrets file separately (not in config.toml)
     if (newProviderKey) {
       try {
-        await invoke("save_provider_api_key", { providerId: newProviderId, apiKey: newProviderKey });
+        await invoke("save_provider_api_key", { providerId, apiKey: newProviderKey });
       } catch (e) {
         setSaveError(`API key save failed: ${e}`);
       }
@@ -299,12 +324,12 @@ export default function SettingsPanel() {
               key={p.id}
               className={`provider-card custom ${config.model_provider === p.id ? "active" : ""}`}
               onClick={() => {
-                setConfig({ ...config, model_provider: p.id, openai_base_url: p.base_url });
+                setConfig({ ...config, model_provider: p.id, model: p.model, openai_base_url: p.base_url });
               }}
             >
               <span className="provider-code">CU</span>
               <span className="provider-name">{p.name}</span>
-              <span className="provider-url">{p.base_url}</span>
+              <span className="provider-url">{p.model || "model unset"}</span>
             </button>
           ))}
         </div>
@@ -317,7 +342,17 @@ export default function SettingsPanel() {
               <input
                 type="text"
                 value={config.model}
-                onChange={(e) => setConfig({ ...config, model: e.target.value })}
+                onChange={(e) => {
+                  const model = e.target.value;
+                  if (activeProvider.isCustom) {
+                    const updatedProviders = config.custom_providers.map((provider) =>
+                      provider.id === config.model_provider ? { ...provider, model } : provider
+                    );
+                    setConfig({ ...config, model, custom_providers: updatedProviders });
+                  } else {
+                    setConfig({ ...config, model });
+                  }
+                }}
                 placeholder={activeProvider.placeholder}
               />
             </div>
@@ -488,7 +523,7 @@ export default function SettingsPanel() {
         {config.custom_providers.map((p) => (
           <div key={p.id} className="custom-provider-card">
             <div className="provider-info">
-              <strong>{p.name}</strong> <code>{p.base_url}</code>
+              <strong>{p.name}</strong> <code>{p.base_url}</code> <code>{p.adapter}</code>
               <span className="api-key-status">
                 {revealProviderId === p.id && revealKey
                   ? <code className="reveal-key">{revealKey}</code>
@@ -535,6 +570,12 @@ export default function SettingsPanel() {
           />
           <input
             type="text"
+            value={newProviderModel}
+            onChange={(e) => setNewProviderModel(e.target.value)}
+            placeholder="Model ID (e.g. deepseek-v4-pro)"
+          />
+          <input
+            type="text"
             value={newProviderUrl}
             onChange={(e) => setNewProviderUrl(e.target.value)}
             placeholder="Base URL (e.g. https://api.example.com/v1)"
@@ -545,6 +586,14 @@ export default function SettingsPanel() {
             onChange={(e) => setNewProviderKey(e.target.value)}
             placeholder="API Key"
           />
+          <select
+            value={newProviderAdapter}
+            onChange={(e) => setNewProviderAdapter(e.target.value)}
+          >
+            <option value="responses">Responses API</option>
+            <option value="chat-completions">Chat Completions</option>
+            <option value="chat-completions-direct">Chat Completions (direct)</option>
+          </select>
           <button className="btn-add" onClick={addCustomProvider}>
             Add provider
           </button>

@@ -39,8 +39,13 @@ async fn start_agent(
             .unwrap_or(proxy_config.env_key);
         let api_key = std::env::var(&env_key)
             .map_err(|_| format!("Missing API key env var for proxy: {env_key}"))?;
-        let proxy_base_url =
-            mimo_adapter::start(upstream_base_url, api_key, proxy_config.multimodal_model).await?;
+        let proxy_base_url = mimo_adapter::start(
+            upstream_base_url,
+            api_key,
+            proxy_config.multimodal_model,
+            proxy_config.no_proxy,
+        )
+        .await?;
         config.model_provider.base_url = Some(proxy_base_url.clone());
         if let Some(provider) = config.model_providers.get_mut(&config.model_provider_id) {
             provider.base_url = Some(proxy_base_url.clone());
