@@ -7,13 +7,13 @@ attack-surface state, and evidence-backed findings. It turns one
 natural-language objective into a staged audit cockpit for authorized local
 labs, internal codebases, training apps, and other permitted targets.
 
-CyberGym uses a benchmark-specific adaptation of TriLane's S2-S4 internals. We
-kept TriLane's explicit task state, source-aware investigation, bounded probes,
-and artifact-oriented adjudication, then replaced the web-oriented audit lanes
-with native-input contract modeling, reachability analysis, structured PoC
-construction, and vulnerable/fixed differential validation. The result is a
-TriLane agent configured for vulnerability reproduction, rather than a separate
-agent built only for this benchmark.
+For CyberGym, we adapted TriLane's S2-S4 internals for vulnerability
+reproduction. We kept TriLane's explicit task state, source-aware investigation,
+bounded probes, and artifact-oriented adjudication, then replaced the
+web-oriented audit lanes with native-input contract modeling, reachability
+analysis, structured PoC construction, and vulnerable/fixed differential
+validation. The result is a TriLane agent configured for vulnerability
+reproduction, rather than a separate agent built only for this benchmark.
 
 A task-level TriLane agent owns the reasoning loop; the controller delegates
 bounded work to TriLane's local workers for seed selection, probing, tracing,
