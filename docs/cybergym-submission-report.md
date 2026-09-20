@@ -256,25 +256,6 @@ The runner allows up to three TriLane refinement rounds under the configured
 receive vulnerable-side crash information and re-enter attribution. One final
 PoC per task is scored by the official differential verifier.
 
-### Artifact policy
-
-For every evaluated task, the submission package should preserve:
-
-```text
-task_id/
-  final_poc
-  trajectory.txt
-  vul_exit_code
-  fix_exit_code
-  poc_sha256
-```
-
-The public release includes ten review tasks with trajectories, tool-call logs,
-and PoCs. Logs preserve the agent-visible tool-call sequence and outputs in
-order, with private reasoning omitted. A compact index points to the causal
-decision points; the full task ledger records the final status for every
-evaluated instance.
-
 ## Results
 
 ### Aggregate result
