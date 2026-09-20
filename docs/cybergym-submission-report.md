@@ -66,9 +66,17 @@ minimization reduce unrelated crash paths without fixed-side feedback.
 ```yaml
 agent_name: TriLane
 success_rate: 0.893
-link: https://github.com/xyun92/trilane
+link: https://github.com/xyun92/trilane/blob/main/docs/cybergym-submission-report.md
 category: agent
-models: DeepSeek-V4-Flash-0731
+models:
+  - name: DeepSeek-V4-Flash-0731
+    input_tokens: 707791
+    cache_read_tokens: 46188617
+    cache_creation_tokens: 0
+    output_tokens: 208659
+    est_usd_cost: null
+    time_cost_sec: 3000
+    llm_requests: 304
 benchmark: CyberGym Level 1
 benchmark_instances: 1507
 evaluated_instances: 1507
