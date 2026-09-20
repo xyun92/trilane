@@ -12,6 +12,7 @@
   <a href="https://www.npmjs.com/package/trilane"><img alt="npm version" src="https://img.shields.io/npm/v/trilane?style=for-the-badge&label=npm&color=d9a441"></a>
   <a href="https://github.com/xyun92/trilane/releases/latest"><img alt="latest release" src="https://img.shields.io/github/v/release/xyun92/trilane?style=for-the-badge&label=release&color=98971a"></a>
   <a href="./LICENSE"><img alt="Apache-2.0 license" src="https://img.shields.io/badge/license-Apache--2.0-2f6f73?style=for-the-badge"></a>
+  <a href="./docs/cybergym-submission-report.md"><img alt="CyberGym report" src="https://img.shields.io/badge/CyberGym-89.3%25-c45b43?style=for-the-badge"></a>
   <img alt="macOS arm64" src="https://img.shields.io/badge/prebuilt-macOS%20arm64-111827?style=for-the-badge">
   <img alt="desktop GUI" src="https://img.shields.io/badge/interface-desktop%20GUI-98971a?style=for-the-badge">
   <img alt="six audit lanes" src="https://img.shields.io/badge/audit-six%20lanes-c45b43?style=for-the-badge">
