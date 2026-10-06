@@ -7,13 +7,13 @@ attack-surface state, and evidence-backed findings. It turns one
 natural-language objective into a staged audit cockpit for authorized local
 labs, internal codebases, training apps, and other permitted targets.
 
-CyberGym uses a benchmark-specific adaptation of TriLane's S2-S4 internals. We
-kept TriLane's explicit task state, source-aware investigation, bounded probes,
-and artifact-oriented adjudication, then replaced the web-oriented audit lanes
-with native-input contract modeling, reachability analysis, structured PoC
-construction, and vulnerable/fixed differential validation. The result is a
-TriLane agent configured for vulnerability reproduction, rather than a separate
-agent built only for this benchmark.
+For CyberGym, we adapted TriLane's S2-S4 internals for vulnerability
+reproduction. We kept TriLane's explicit task state, source-aware investigation,
+bounded probes, and artifact-oriented adjudication, then replaced the
+web-oriented audit lanes with native-input contract modeling, reachability
+analysis, structured PoC construction, and vulnerable/fixed differential
+validation. The result is a TriLane agent configured for vulnerability
+reproduction, rather than a separate agent built only for this benchmark.
 
 A task-level TriLane agent owns the reasoning loop; the controller delegates
 bounded work to TriLane's local workers for seed selection, probing, tracing,
@@ -48,11 +48,12 @@ Level 1 task package
     -> official vulnerable/fixed differential verification
 ```
 
-The controller isolates the workspace and builds a task brief from the Level 1
+The controller prepares a task workspace and builds a task brief from the Level 1
 description, source-derived targets, seed state, trigger summary, and diagnostic
 tools. The agent follows a bounded source-to-input loop: scouts establish a
 starting state, deeper analysis diagnoses hard candidates, and vulnerable-side
-results refine them. The fixed build stays outside this loop.
+results refine them. The fixed build stays outside this loop and is used only by
+the differential verifier.
 
 Two engineering lessons shaped the design. Seed routing is part of the
 algorithm: an identifier mismatch once sent mapped seeds to fallback inputs; the
@@ -65,7 +66,7 @@ minimization reduce unrelated crash paths without fixed-side feedback.
 
 ```yaml
 agent_name: TriLane
-success_rate: 0.893
+success_rate: 0.8892
 link: https://github.com/xyun92/trilane/blob/main/docs/cybergym-submission-report.md
 category: agent
 models:
@@ -81,18 +82,16 @@ benchmark: CyberGym Level 1
 benchmark_instances: 1507
 evaluated_instances: 1507
 task_pool_definition: >
-  All 1,507 CyberGym Level 1 tasks. Every instance was processed by
-  the TriLane agent system described in this report. A task is counted
-  as solved when its agent-designated final PoC triggers the
-  vulnerable target and remains clean on the fixed target during
-  independent verification.
+  All 1,507 CyberGym Level 1 tasks. A task is counted as solved when
+  its submitted final PoC triggers the vulnerable target and remains
+  clean on the fixed target under the official ground-truth wrapper.
 ```
 
 ## Method
 
 ### 1. Task-local intake
 
-Each task is processed in an isolated workspace. The agent receives the
+Each task is processed in a dedicated working directory. The agent receives the
 permitted vulnerability description, pre-patch source, vulnerable-side runtime
 environment, and task-local materials. It first builds a compact problem model:
 
@@ -106,8 +105,7 @@ Task-local materials include files packaged with the instance. The runner also
 exposes a static seed corpus indexed by input format and fuzz target, assembled
 from permitted Level 1 package contents; only the matching subset is copied
 into the current task workspace. These are raw input examples and format aids,
-not patches, fixed binaries, reference PoCs, or fixed-side results. No live
-sibling workspace is read during a task.
+not patches, fixed binaries, reference PoCs, or fixed-side results.
 
 ### 2. Input-contract modeling
 
@@ -135,11 +133,33 @@ hypothesis:
   parser state.
 
 Candidate history records the parent input, changed dimensions, generation
-method, observed result, and hash. The agent can switch between byte edits,
+method, and observed result. The agent can switch between byte edits,
 programmatic construction, and coverage-guided search as the input contract
 becomes clearer. Fuzzing output remains a candidate or diagnostic signal; final
 selection still requires vulnerable-side attribution and official differential
 verification.
+
+The pre-agent scouts did not run fixed-build differential verification or mark
+tasks as solved, so their strict per-stage first-solve count was zero. They
+produced vulnerable-side candidates for the agent to inspect. The retained
+runner logs give these mutually exclusive first-candidate counts:
+
+| First candidate stage | Provisional candidates | Genuine vulnerable-build crashes |
+|---|---:|---:|
+| Quick-try | 20 | 20 |
+| `mini_afl` | 4 | 4 |
+| Target `libFuzzer` | 0 | 0 |
+| Structured generator | 1 | 1 |
+| Pre-mutation | 37 | 13 |
+| **Total** | **62** | **38** |
+
+The remaining 24 pre-mutation flags were exit-127 execution failures. Of the 62
+flagged tasks, 53 eventually became valid successes after the full workflow, but
+only 11 final successful PoCs were byte-identical to the initial scout
+candidate. This is the closest byte-level measure of a scout having already
+produced the eventual answer. Ten of those 11 were reviewed by the agent; one
+came from an early legacy runner. In the current pipeline, the agent runs on
+every task and receives the scout log whether or not a candidate was found.
 
 ### 4. Vulnerable-side feedback loop
 
@@ -199,7 +219,7 @@ fixed-side run.
 
 | Capability | Role |
 |---|---|
-| Task orchestration layer | Isolate the workspace, route seeds, run scouts, and control refinement rounds |
+| Task orchestration layer | Prepare the workspace, route seeds, run scouts, and control refinement rounds |
 | TriLane reasoning layer | Perform source-aware analysis and construct candidates |
 | Task intake and source search | Locate the harness and vulnerable operation |
 | Format parser and source mapper | Inspect byte structure and map fields to source reads |
@@ -227,9 +247,8 @@ The runner copies selected task-package files and the matching static seed subse
 into the task workspace. The task agent sees the Level 1 description, pre-patch
 source, vulnerable executable, permitted seeds, and disclosed local tools.
 
-The task boundary excludes the fixed executable, patch, fixed-side trace,
-reference PoC, private grader materials, artifacts from another task, and
-fix-side crash information.
+The solver is not supplied with the fixed executable, patch, fixed-side trace,
+reference PoC, private grader materials, or fix-side crash information.
 
 Multi-round feedback, candidate scanning, and truncation scanning use
 vulnerable-side results. The fixed binary is invoked by the official
@@ -237,17 +256,26 @@ differential runner after final PoC selection.
 
 ### Network and environment policy
 
-- Execution is offline: there is no web browsing, external API access, or
-  outbound network connection.
-- Filesystem access is restricted by directory permissions. The agent process
-  can read the task's Level 1 inputs and the runner-exposed seed directories,
-  but cannot traverse or read sibling task workspaces, fixed-side artifacts, or
-  unrelated host files.
+- The agent's tool environment is offline: it has no web browsing, external
+  API access, or outbound network connection.
+- The runner masks fixed-side task paths and other non-Level-1 dataset roots,
+  then mounts the current task into the workspace.
+- The agent account can enumerate the deployment root and read ordinary
+  unmasked files there. Patched images, patched sources, and other fixed-side
+  task data remain masked and unreadable.
 - The agent operates within a per-task working directory containing the
   pre-patch source, the vulnerable executable, local seeds, and the
   diagnostic tools described in this report.
 - Runner-bundled methodology and format metadata, when present in the task
   workspace, are the available local reference material.
+
+The deployment root and ordinary unmasked runner artifacts, including aggregate
+statistics and per-task Level 1 setup/status logs, were readable to the agent.
+They contain no patched material, fixed-side results, reference PoCs, stored
+agent trajectories, or higher-level task answers. The worker-level `/tmp` was
+shared across the campaign and was not cleared between every run; retained files
+were limited to Level 1 format-construction material. Patched and fixed-side task
+data remained masked.
 
 ### Trials and retry policy
 
@@ -256,25 +284,6 @@ The runner allows up to three TriLane refinement rounds under the configured
 receive vulnerable-side crash information and re-enter attribution. One final
 PoC per task is scored by the official differential verifier.
 
-### Artifact policy
-
-For every evaluated task, the submission package should preserve:
-
-```text
-task_id/
-  final_poc
-  trajectory.txt
-  vul_exit_code
-  fix_exit_code
-  poc_sha256
-```
-
-The public release includes ten review tasks with trajectories, tool-call logs,
-and PoCs. Logs preserve the agent-visible tool-call sequence and outputs in
-order, with private reasoning omitted. A compact index points to the causal
-decision points; the full task ledger records the final status for every
-evaluated instance.
-
 ## Results
 
 ### Aggregate result
@@ -282,12 +291,13 @@ evaluated instance.
 | Metric | Value |
 |---|---:|
 | Evaluated instances | 1,507 |
-| Fixed-clean solved (VS) | 1,345 |
-| Success rate | 89.3% |
-| Both-version crashes (NS) | 53 |
-| No-crash tasks (NC) | 109 |
+| Fixed-clean solved (VS) | 1,340 |
+| Success rate | 88.92% |
+| Both-version crashes (NS) | 54 |
+| No-crash tasks (NC) | 110 |
+| Out-of-memory terminations (EX_OSERR) | 3 |
 | Timeouts | 0 |
-| Execution errors | 0 |
+| Other execution errors | 0 |
 | Average wall-clock seconds per task | 3,000 (~50 min) |
 
 ### Average per-task model and token usage
@@ -295,3 +305,9 @@ evaluated instance.
 | Model | Input tokens | Cache-read tokens | Output tokens | Time (s) | Requests |
 |---|---:|---:|---:|---:|---:|
 | DeepSeek-V4-Flash-0731 | 707,791 | 46,188,617 | 208,659 | 3,000 | 304 |
+
+Values are averages per benchmark task.
+
+All selected PoCs were re-verified through the official ground-truth wrappers.
+The accompanying 1,507-row CSV records the resulting vulnerable and fixed exit
+codes and final classification.
