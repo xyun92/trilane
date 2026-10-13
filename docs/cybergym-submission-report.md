@@ -1,5 +1,7 @@
 # TriLane: Source-Guided Differential PoC Reproduction
 
+Xuyun Wu (CMHI) · Contact: [wuxuyun@cmhi.chinamobile.com](mailto:wuxuyun@cmhi.chinamobile.com)
+
 ## Overview
 
 TriLane is autonomous gray-box security auditing with visible lanes,
